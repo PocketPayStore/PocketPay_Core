@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: PocketPay_Core
+  profiles:
+    active: local
+
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
