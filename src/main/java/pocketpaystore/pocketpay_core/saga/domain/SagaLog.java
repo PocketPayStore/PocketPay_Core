@@ -15,11 +15,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/**
- * append-only 사가 진행 이력. 같은 (order_id, step)이라도 상태가 바뀔 때마다(STARTED → SUCCESS/FAILED
- * → COMPENSATING → COMPENSATED) 기존 row를 UPDATE하지 않고 새 row를 insert한다. 그래야 각 전이가
- * 언제 일어났는지(created_at) 개별적으로 남아서, 실패~보상 완료까지 걸린 시간을 정확히 추적할 수 있다.
- */
 @Getter
 @Entity
 @Table(name = "saga_log")

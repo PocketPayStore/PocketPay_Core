@@ -13,14 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/**
- * product와 1:1인 재고 테이블. PK는 다른 테이블처럼 별도 auto_increment id고, product_id는
- * UNIQUE 제약으로 1:1을 보장한다.
- * 가용 재고 = total_quantity - reserved_quantity - sold_quantity.
- * 이 계산 로직은 엔티티가 아니라 도메인 서비스 한 곳에만 구현한다 (도메인 규칙 4번).
- * 현재는 비관적 락(SELECT ... FOR UPDATE)으로 동시성을 제어한다. 낙관적 락(version)은 단계 5(락 전략
- * 실험)에서 다시 도입한다.
- */
 @Getter
 @Entity
 @Table(name = "stock")

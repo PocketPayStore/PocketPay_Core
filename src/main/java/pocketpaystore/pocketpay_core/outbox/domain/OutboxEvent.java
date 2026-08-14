@@ -16,7 +16,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** 비동기 전환 단계(단계 4) 전까지는 테이블만 존재하고 코드에서는 쓰지 않는다. */
 @Getter
 @Entity
 @Table(name = "outbox_event")

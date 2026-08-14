@@ -15,7 +15,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** append-only 포인트 변동 이력. */
 @Getter
 @Entity
 @Table(name = "point_ledger")
