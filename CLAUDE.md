@@ -1,6 +1,6 @@
 # CLAUDE.md — payment-core
 
-`payment-core`는 포켓몬 카드 스토어의 결제 코어 서버다. 고객 화면은 없고, `/api/**` REST API만 제공한다. 이 문서는 이 레포를 개발할 때 필요한 내용만 담는다.
+`payment-core`는 포켓몬 카드 스토어의 결제 코어 서버다. 스토어가 직접 재고를 파는 게 아니라, 회원이 자기 카드를 등록하면 다른 회원이 사가는 **위탁판매(마켓플레이스)** 구조다. 고객 화면은 없고, `/api/**` REST API만 제공한다. 이 문서는 이 레포를 개발할 때 필요한 내용만 담는다.
 
 ---
 
@@ -20,7 +20,7 @@
 | Cache | `spring-boot-starter-data-redis` (캐싱 + Redisson 분산락) — 락/캐싱 단계부터 사용 |
 | MQ | RabbitMQ — 비동기 전환 단계부터 사용, 그 전까지는 의존성도 추가하지 않는다 |
 | 장애 대응 | Resilience4j (CircuitBreaker/Retry/TimeLimiter) — 캐싱/서킷브레이커 단계부터 사용, 별도 의존성 추가 필요 |
-| 인증 | 별도 로그인/JWT 없음. 필요하면 고정 API Key 헤더(`X-Api-Key`) 검증 정도만 (Spring Security 의존성 자체를 추가하지 않음) |
+| 인증 | JWT **Access Token만** 우선 도입 (Refresh Token, Spring Security 풀스택은 아직 X). 인가 구분은 `member.role`(`USER`/`ADMIN`)로 한다 |
 | 코드 생성 | Lombok (`compileOnly`/`annotationProcessor`) |
 | 개발 편의 | `spring-boot-devtools` (developmentOnly) |
 | 테스트 | JUnit 5 (`junit-platform-launcher`), Boot 4의 테스트 스타터 세트(`-actuator-test`, `-data-jpa-test`, `-data-redis-test`, `-flyway-test`, `-validation-test`, `-webmvc-test`)를 상황에 맞게 사용 |
@@ -57,7 +57,7 @@ public interface PgClient {
 
 ### DB 접근 전략
 
-- 쓰기 경로(주문/결제/재고/포인트 — 락·Saga·Outbox 관여): **Spring Data JPA**. `@Version` 낙관적 락을 표준으로 사용.
+- 쓰기 경로(주문/결제/재고/포인트 — 락·Saga·Outbox 관여): **Spring Data JPA**. 현재는 비관적 락(`SELECT ... FOR UPDATE`)을 쓰고, 낙관적 락(`@Version`)은 단계 5(락 전략 실험)에서 다시 도입한다.
 - 조회·집계 경로: **QueryDSL** (별도 의존성 추가 필요, 현재 build.gradle엔 없음 — 조회 로직 붙일 때 추가할 것).
 - MyBatis는 쓰지 않는다.
 
@@ -71,6 +71,7 @@ public interface PgClient {
 4. **가용 재고 계산(`total_quantity - reserved_quantity - sold_quantity`)은 도메인 서비스 한 곳에만 구현한다.** 여러 곳에 중복 구현하지 않는다.
 5. **PG 승인처럼 외부 호출은 트랜잭션 밖에서 동기로 수행한다.** DB 트랜잭션이 PG 상태까지 롤백해주지 않으므로, PG 승인 이후 단계가 실패하면 명시적으로 PG 취소 API를 호출하는 보상 로직을 둔다.
 6. **포인트 잔액은 `point_balance`에서만 갱신하고, 모든 변동은 `point_ledger`에 append-only로 남긴다.**
+7. **한 주문(order)에는 한 판매자(seller)의 상품만 담을 수 있다.** 서로 다른 판매자의 상품을 주문 생성 시 함께 담지 못하게 막는다 — `settlement`이 결제 1건당 1건으로 끝나는 전제가 여기서 나온다.
 
 ---
 
@@ -83,17 +84,17 @@ public interface PgClient {
 |---|---|---|
 | id | BIGINT PK | |
 | email | VARCHAR(255) UNIQUE | |
-| password | VARCHAR(255) | 암호화 저장 |
+| password | VARCHAR(255) | 평문 저장 (별도 암호화 없음) |
 | name | VARCHAR(100) | |
-| phone | VARCHAR(20) | |
+| role | ENUM | USER / ADMIN — JWT Access Token 인가 구분용 |
 | created_at | DATETIME | |
 
-**point_balance** (낙관적 락 대상)
+**point_balance**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
-| member_id | BIGINT PK, FK→member | |
+| id | BIGINT PK | |
+| member_id | BIGINT UNIQUE, FK→member | member와 1:1 |
 | balance | BIGINT | 원 단위, Double 금지 |
-| version | BIGINT | `@Version` |
 | updated_at | DATETIME | |
 
 **point_ledger** (append-only)
@@ -113,24 +114,26 @@ public interface PgClient {
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
+| seller_id | BIGINT FK→member | 카드를 등록한(파는) 회원. 위탁판매 구조라 필수 |
 | name | VARCHAR(200) | 예: 리자몽 GX 부스터팩 |
-| category | ENUM | BOOSTER_PACK / SINGLE_CARD / COLLECTION_BOX |
-| rarity | ENUM | COMMON / RARE / SUPER_RARE / LEGEND |
 | price | BIGINT | 원 단위 |
-| is_limited | BOOLEAN | 한정판 여부 |
 | created_at | DATETIME | |
+
+> 판매 상품은 전부 한정판이라고 가정한다. `category`/`rarity`/`is_limited` 같은 상품 분류·한정판 여부 필드는 두지 않는다.
+> 스토어가 직접 파는 재고는 없다 — 모든 상품은 회원이 등록한 것이다 (도메인 규칙 7번: 한 주문엔 한 판매자 상품만).
 
 **stock** (락 전략 비교의 핵심 테이블)
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
-| product_id | BIGINT PK, FK→product | |
+| id | BIGINT PK | |
+| product_id | BIGINT UNIQUE, FK→product | product와 1:1 |
 | total_quantity | INT | |
 | reserved_quantity | INT | 주문 생성~결제 확정 사이 임시 예약 |
 | sold_quantity | INT | 확정 판매 |
-| version | BIGINT | 낙관적 락용 |
 | updated_at | DATETIME | |
 
 > 가용 재고 = total_quantity − reserved_quantity − sold_quantity. 주문 생성 시 reserved 증가, 결제 확정 시 reserved→sold, 실패/취소 시 reserved 원복.
+> 현재는 비관적 락으로 동시성을 제어한다. `version`(낙관적 락)은 단계 5에서 다시 도입한다.
 
 ### 주문/결제
 
@@ -159,6 +162,7 @@ public interface PgClient {
 |---|---|---|
 | id | BIGINT PK | |
 | order_id | BIGINT FK | |
+| payment_method | ENUM | CARD (현재는 카드만 지원, 추후 확장) |
 | pg_provider | VARCHAR(50) | |
 | pg_transaction_id | VARCHAR(100) | |
 | idempotency_key | VARCHAR(100) UNIQUE | |
@@ -176,6 +180,24 @@ public interface PgClient {
 | reason | VARCHAR(200) | |
 | canceled_at | DATETIME | |
 
+### 정산
+
+**settlement**
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | BIGINT PK | |
+| payment_id | BIGINT FK | |
+| seller_id | BIGINT FK→member | 정산금을 지급받을 판매자 |
+| amount | BIGINT | 정산 대상 금액(결제 금액) |
+| pg_fee_amount | BIGINT | PG 수수료 |
+| platform_fee_amount | BIGINT | 플랫폼(우리) 수수료 |
+| net_amount | BIGINT | 판매자 실지급액 = amount − pg_fee_amount − platform_fee_amount |
+| status | ENUM | PENDING / SETTLED / FAILED |
+| settled_at | DATETIME nullable | 배치가 실제 판매자에게 지급 처리한 시각 (row 생성 시각인 created_at과 다름) |
+| created_at | DATETIME | 사가의 "정산 데이터 적재" 단계에서 PENDING으로 생성되는 시각 |
+
+> 실제 지급 처리(net_amount를 판매자 계좌로 송금)는 별도 배치 잡이 이 테이블을 읽어서 수행한다. 여기서는 데이터를 적재하는 부분까지만 다룬다. 한 주문은 한 판매자 상품만 담을 수 있어서(도메인 규칙 7번) payment 1건당 settlement 1건이다.
+
 ### Saga / Outbox
 
 **saga_log**
@@ -183,7 +205,7 @@ public interface PgClient {
 |---|---|---|
 | id | BIGINT PK | |
 | order_id | BIGINT FK | |
-| step | ENUM | PAYMENT / POINT_EARN / STOCK_CONFIRM / NOTIFICATION |
+| step | ENUM | PAYMENT / POINT_EARN / STOCK_CONFIRM / NOTIFICATION / SETTLEMENT |
 | status | ENUM | STARTED / SUCCESS / FAILED / COMPENSATING / COMPENSATED |
 | error_message | VARCHAR(500) nullable | |
 | created_at | DATETIME | |
@@ -192,7 +214,7 @@ public interface PgClient {
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
-| aggregate_type | VARCHAR(50) | ORDER / PAYMENT |
+| aggregate_type | ENUM | ORDER / PAYMENT |
 | aggregate_id | BIGINT | |
 | event_type | VARCHAR(100) | |
 | payload | JSON | |
@@ -201,9 +223,9 @@ public interface PgClient {
 | created_at | DATETIME | |
 | published_at | DATETIME nullable | |
 
-### 장애/관측
+### PG 콜백
 
-**webhook_log**
+**pg_callback_log**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -214,23 +236,7 @@ public interface PgClient {
 | retry_count | INT | |
 | received_at | DATETIME | |
 
-**circuit_breaker_log** (캐싱/서킷브레이커 단계부터 사용)
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| id | BIGINT PK | |
-| pg_provider | VARCHAR(50) | |
-| state | ENUM | CLOSED / OPEN / HALF_OPEN |
-| transitioned_at | DATETIME | |
-
-**lock_conflict_log** (락 전략 단계부터 사용)
-| 컬럼 | 타입 | 설명 |
-|---|---|---|
-| id | BIGINT PK | |
-| resource_type | VARCHAR(50) | STOCK / POINT |
-| resource_id | BIGINT | |
-| retry_count | INT | |
-| resolved | BOOLEAN | |
-| occurred_at | DATETIME | |
+> 서킷브레이커 상태(CLOSED/OPEN/HALF_OPEN)와 락 충돌 횟수는 별도 테이블 대신 Resilience4j/Micrometer가 노출하는 Prometheus 메트릭 + Grafana로 관찰한다. (`circuit_breaker_log`, `lock_conflict_log`는 두지 않기로 함)
 
 ### 관계 요약
 
@@ -242,9 +248,12 @@ orders 1---N order_item
 orders 1---N payment
 orders 1---N saga_log
 payment 1---N payment_cancel
-payment 1---N webhook_log (pg_transaction_id 매칭)
+payment 1---N pg_callback_log (pg_transaction_id 매칭)
 product 1---1 stock
 product 1---N order_item
+member 1---N product (판매자)
+payment 1---N settlement
+member 1---N settlement (판매자, 지급 대상)
 ```
 
 ---
@@ -253,7 +262,7 @@ product 1---N order_item
 
 ### 이 레포가 제공하는 API
 
-상품/포인트 조회 같은 "화면용" API는 만들지 않는다. 상품/재고는 Flyway 시드 데이터로 고정 ID를 심어두고 사용한다.
+상품/포인트 조회 같은 "화면용" API는 만들지 않는다. 테스트 회원(id 1~10, `test{id}@test.com`/`test{id}`)과 상품/재고는 Flyway 시드 데이터(`V2__seed_data.sql`, product id 1~10, 판매자는 회원 1~7에 분산, 재고는 1~500으로 다양하게)로 고정 ID를 심어두고 사용한다.
 
 | Method | Endpoint | 설명 | 비고 |
 |---|---|---|---|
@@ -263,30 +272,6 @@ product 1---N order_item
 | POST | `/api/payments/{id}/cancel` | 결제 취소(전체/부분) | |
 | POST | `/api/webhooks/pg` | PG 웹훅 수신 | HMAC 서명 검증 |
 
-**POST /api/orders**
-```json
-{
-  "memberId": 1001,
-  "items": [{ "productId": 501, "quantity": 3 }]
-}
-```
-헤더: `Idempotency-Key: {UUID}`
-
-**POST /api/payments**
-```json
-{ "orderId": 20001, "paymentMethod": "CARD" }
-```
-헤더: `Idempotency-Key: {UUID}`
-
-**응답**
-```json
-{
-  "paymentId": 30001,
-  "status": "DONE",
-  "pgTransactionId": "MOCKPG-TX-88231",
-  "approvedAt": "2026-08-13T14:00:00"
-}
-```
 
 ### 이 레포가 호출하는 외부 PG API (계약, `PgClient` Feign 인터페이스로 구현 — 기술스택 섹션 참고)
 
@@ -346,13 +331,13 @@ public void deductStock(Long productId, int qty) {
 ```
 - k6 시나리오 A(정상, 서로 다른 상품)/B(충돌, 동일 한정판 상품 집중) 분리 측정
 - 개선: `@Version` 낙관적 락 + `@Retryable` 재시도, 전역 임계구역만 최소 범위로 Redisson 분산락 보완
-- `lock_conflict_log` 적재
+- 락 충돌 횟수는 별도 테이블 없이 재시도/실패 메트릭(Micrometer)으로 관찰
 
 **단계 6 — 캐싱 + 서킷브레이커**
 - Before: PG/상품 설정 매 요청 DB 조회, PG 호출부 보호장치 없음
 - 장애 주입(지연/에러) 시 스레드풀 고갈로 무관한 다른 주문까지 영향받는 것을 확인
 - 개선: Redis 캐싱 + 캐시 무효화, Resilience4j CircuitBreaker/Retry/TimeLimiter를 PG 호출부에 적용
-- Rate Limiting(토큰버킷), `circuit_breaker_log` 적재
+- Rate Limiting(토큰버킷). 서킷브레이커 상태 전이는 Resilience4j가 노출하는 Micrometer 메트릭 + Prometheus/Grafana로 관찰 (별도 테이블 없음)
 
 ---
 
