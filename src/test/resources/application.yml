@@ -6,3 +6,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+
+jwt:
+  secret: jkZo7UPI+NraSo/EQTCj41IRHSsOuLD7ah5M2arIANcJUTH/bIRWFYzvztR6JvIOB6qKWo/GS9B5lOygQJdE3A==
+  expiry-hours: 1
