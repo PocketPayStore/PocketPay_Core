@@ -13,7 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** 부분취소를 지원하므로 payment 1건에 여러 건 존재할 수 있다. */
 @Getter
 @Entity
 @Table(name = "payment_cancel")

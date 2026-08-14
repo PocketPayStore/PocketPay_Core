@@ -13,7 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** 위탁판매 상품. 회원이 자기 카드를 등록해서 파는 구조라 seller_id가 필수다. */
 @Getter
 @Entity
 @Table(name = "product")

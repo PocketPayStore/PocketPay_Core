@@ -13,7 +13,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** PG가 보내는 웹훅(콜백) 원본을 그대로 보관한다. */
 @Getter
 @Entity
 @Table(name = "pg_callback_log")

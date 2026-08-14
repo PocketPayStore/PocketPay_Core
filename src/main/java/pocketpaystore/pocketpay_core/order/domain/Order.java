@@ -15,7 +15,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
 
-/** 테이블명은 "order"가 SQL 예약어라 "orders"를 쓴다. */
 @Getter
 @Entity
 @Table(name = "orders")
