@@ -40,4 +40,14 @@ public class PgCallbackLog extends BaseEntity {
 	@Column(name = "retry_count", nullable = false)
 	private int retryCount;
 
+	public static PgCallbackLog create(String pgTransactionId, String payload, boolean signatureValid) {
+		return PgCallbackLog.builder()
+				.pgTransactionId(pgTransactionId)
+				.payload(payload)
+				.signatureValid(signatureValid)
+				.processed(false)
+				.retryCount(0)
+				.build();
+	}
+
 }
