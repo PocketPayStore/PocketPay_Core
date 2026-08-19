@@ -11,7 +11,8 @@ public enum AuthErrorCode implements ErrorCode {
 
 	MEMBER_NOT_FOUND("AUTH_001", "존재하지 않는 회원입니다.", HttpStatus.NOT_FOUND),
 	INVALID_PASSWORD("AUTH_002", "비밀번호가 일치하지 않습니다.", HttpStatus.UNAUTHORIZED),
-	INVALID_TOKEN("AUTH_003", "유효하지 않은 토큰입니다.", HttpStatus.UNAUTHORIZED);
+	INVALID_TOKEN("AUTH_003", "유효하지 않은 토큰입니다.", HttpStatus.UNAUTHORIZED),
+	FORBIDDEN("AUTH_004", "권한이 없습니다.", HttpStatus.FORBIDDEN);
 
 	private final String code;
 	private final String message;
