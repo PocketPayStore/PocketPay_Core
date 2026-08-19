@@ -8,6 +8,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import lombok.RequiredArgsConstructor;
+import pocketpaystore.pocketpay_core.admin.resolver.AdminArgumentResolver;
 import pocketpaystore.pocketpay_core.auth.interceptor.AuthInterceptor;
 import pocketpaystore.pocketpay_core.auth.resolver.MemberArgumentResolver;
 
@@ -17,6 +18,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
 	private final AuthInterceptor authInterceptor;
 	private final MemberArgumentResolver memberArgumentResolver;
+	private final AdminArgumentResolver adminArgumentResolver;
 
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
@@ -28,6 +30,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 	@Override
 	public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
 		resolvers.add(memberArgumentResolver);
+		resolvers.add(adminArgumentResolver);
 	}
 
 }
