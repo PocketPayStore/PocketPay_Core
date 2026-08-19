@@ -12,6 +12,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
+import pocketpaystore.pocketpay_core.common.exception.CustomException;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.PointErrorCode;
 
 @Getter
 @Entity
@@ -30,5 +32,25 @@ public class PointBalance extends BaseEntity {
 
 	@Column(nullable = false)
 	private Long balance;
+
+	public static PointBalance create(Long memberId) {
+		return PointBalance.builder()
+				.memberId(memberId)
+				.balance(0L)
+				.build();
+	}
+
+	public Long adjust(Long amount) {
+		this.balance += amount;
+		return this.balance;
+	}
+
+	public Long use(Long amount) {
+		if (this.balance < amount) {
+			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
+		}
+		this.balance -= amount;
+		return this.balance;
+	}
 
 }

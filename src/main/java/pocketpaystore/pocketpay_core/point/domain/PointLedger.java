@@ -43,4 +43,14 @@ public class PointLedger extends BaseEntity {
 	@Column(name = "balance_after", nullable = false)
 	private Long balanceAfter;
 
+	public static PointLedger create(Long memberId, Long orderId, PointLedgerType type, Long amount, Long balanceAfter) {
+		return PointLedger.builder()
+				.memberId(memberId)
+				.orderId(orderId)
+				.type(type)
+				.amount(amount)
+				.balanceAfter(balanceAfter)
+				.build();
+	}
+
 }
