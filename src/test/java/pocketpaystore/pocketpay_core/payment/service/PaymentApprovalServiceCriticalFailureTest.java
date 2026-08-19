@@ -27,7 +27,7 @@ import pocketpaystore.pocketpay_core.order.repository.OrderRepository;
 import pocketpaystore.pocketpay_core.order.service.OrderService;
 import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
-import pocketpaystore.pocketpay_core.pg.dto.ApprovalResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;

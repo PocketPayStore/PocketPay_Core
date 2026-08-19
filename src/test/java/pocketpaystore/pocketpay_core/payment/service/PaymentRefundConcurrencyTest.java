@@ -37,7 +37,7 @@ import pocketpaystore.pocketpay_core.payment.dto.request.CreateRefundRequest;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentCancelRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
-import pocketpaystore.pocketpay_core.pg.dto.CancelResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.CancelResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;

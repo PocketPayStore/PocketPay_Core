@@ -9,11 +9,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 
 import io.github.resilience4j.retry.annotation.Retry;
 import pocketpaystore.pocketpay_core.common.config.FeignConfig;
-import pocketpaystore.pocketpay_core.pg.dto.ApprovalRequest;
-import pocketpaystore.pocketpay_core.pg.dto.ApprovalResponse;
-import pocketpaystore.pocketpay_core.pg.dto.CancelRequest;
-import pocketpaystore.pocketpay_core.pg.dto.CancelResponse;
-import pocketpaystore.pocketpay_core.pg.dto.TransactionStatusResponse;
+import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
+import pocketpaystore.pocketpay_core.pg.dto.request.CancelRequest;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.CancelResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.TransactionStatusResponse;
 
 @FeignClient(name = "mock-pg", url = "${mock-pg.base-url}", configuration = FeignConfig.class)
 public interface PgClient {
