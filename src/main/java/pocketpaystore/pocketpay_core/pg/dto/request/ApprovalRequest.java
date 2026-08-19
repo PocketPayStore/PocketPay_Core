@@ -1,4 +1,4 @@
-package pocketpaystore.pocketpay_core.pg.dto;
+package pocketpaystore.pocketpay_core.pg.dto.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

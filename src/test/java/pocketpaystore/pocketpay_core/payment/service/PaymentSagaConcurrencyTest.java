@@ -31,7 +31,7 @@ import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
-import pocketpaystore.pocketpay_core.pg.dto.ApprovalResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.point.domain.PointBalance;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
 import pocketpaystore.pocketpay_core.product.domain.Product;

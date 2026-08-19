@@ -9,7 +9,7 @@ import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.payment.service.PaymentStateService;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
-import pocketpaystore.pocketpay_core.pg.dto.CancelRequest;
+import pocketpaystore.pocketpay_core.pg.dto.request.CancelRequest;
 import pocketpaystore.pocketpay_core.point.service.PointService;
 import pocketpaystore.pocketpay_core.product.service.StockService;
 import pocketpaystore.pocketpay_core.saga.domain.SagaStep;

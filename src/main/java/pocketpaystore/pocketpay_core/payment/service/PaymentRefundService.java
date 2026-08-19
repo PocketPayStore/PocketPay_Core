@@ -17,7 +17,7 @@ import pocketpaystore.pocketpay_core.payment.dto.request.CreateRefundRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PreparedRefund;
 import pocketpaystore.pocketpay_core.payment.dto.response.RefundResponse;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
-import pocketpaystore.pocketpay_core.pg.dto.CancelRequest;
+import pocketpaystore.pocketpay_core.pg.dto.request.CancelRequest;
 
 @Slf4j
 @Service

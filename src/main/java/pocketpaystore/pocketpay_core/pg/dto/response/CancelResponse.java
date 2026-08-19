@@ -1,4 +1,4 @@
-package pocketpaystore.pocketpay_core.pg.dto;
+package pocketpaystore.pocketpay_core.pg.dto.response;
 
 import java.time.LocalDateTime;
 
@@ -9,10 +9,10 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class TransactionStatusResponse {
+public class CancelResponse {
 
 	private String pgTransactionId;
-	private String status;
-	private LocalDateTime approvedAt;
+	private String resultCode;
+	private LocalDateTime canceledAt;
 
 }
