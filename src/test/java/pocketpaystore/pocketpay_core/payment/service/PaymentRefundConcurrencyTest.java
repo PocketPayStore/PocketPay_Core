@@ -40,9 +40,10 @@ import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.CancelResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
+import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class PaymentRefundConcurrencyTest {
+class PaymentRefundConcurrencyTest extends RedisTestContainer {
 
 	private static final int CONCURRENT_REQUESTS = 15;
 	private static final int QUANTITY_PER_REQUEST = 1;

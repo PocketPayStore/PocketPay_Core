@@ -32,9 +32,10 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
+import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class PaymentApprovalServiceCriticalFailureTest {
+class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 
 	@Autowired
 	private PaymentApprovalService paymentApprovalService;

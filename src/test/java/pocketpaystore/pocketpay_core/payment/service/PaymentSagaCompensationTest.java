@@ -44,9 +44,10 @@ import pocketpaystore.pocketpay_core.saga.domain.SagaLog;
 import pocketpaystore.pocketpay_core.saga.domain.SagaStatus;
 import pocketpaystore.pocketpay_core.saga.domain.SagaStep;
 import pocketpaystore.pocketpay_core.saga.repository.SagaLogRepository;
+import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class PaymentSagaCompensationTest {
+class PaymentSagaCompensationTest extends RedisTestContainer {
 
 	@Autowired
 	private PaymentApprovalService paymentApprovalService;

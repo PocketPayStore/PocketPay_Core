@@ -38,9 +38,10 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
+import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class PaymentSagaConcurrencyTest {
+class PaymentSagaConcurrencyTest extends RedisTestContainer {
 
 	private static final int CONCURRENT_REQUESTS = 100;
 	private static final int THREAD_POOL_SIZE = CONCURRENT_REQUESTS;

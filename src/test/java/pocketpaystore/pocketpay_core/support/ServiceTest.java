@@ -6,5 +6,5 @@ import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest(webEnvironment = WebEnvironment.NONE)
 @Transactional
-public abstract class ServiceTest {
+public abstract class ServiceTest extends RedisTestContainer {
 }
