@@ -79,6 +79,10 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // ── Testcontainers (idempotency guard가 Redis SETNX를 쓰는 테스트용) ────────────
+    // 버전은 Spring Boot BOM(spring-boot-dependencies)이 관리해서 명시 안 해도 된다.
+    testImplementation 'org.testcontainers:testcontainers'
 }
 
 dependencyManagement {
