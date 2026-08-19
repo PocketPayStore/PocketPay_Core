@@ -14,6 +14,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.common.BaseEntity;
+import pocketpaystore.pocketpay_core.common.exception.CustomException;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
 
 @Getter
 @Entity
@@ -42,5 +44,52 @@ public class Order extends BaseEntity {
 
 	@Column(name = "idempotency_key", nullable = false, unique = true, length = 100)
 	private String idempotencyKey;
+
+	public static Order create(String orderNumber, Long memberId, Long totalAmount, String idempotencyKey) {
+		return Order.builder()
+				.orderNumber(orderNumber)
+				.memberId(memberId)
+				.totalAmount(totalAmount)
+				.status(OrderStatus.CREATED)
+				.idempotencyKey(idempotencyKey)
+				.build();
+	}
+
+	public void reserveStock() {
+		validateTransition(OrderStatus.CREATED);
+		this.status = OrderStatus.STOCK_RESERVED;
+	}
+
+	public void markPaymentPending() {
+		if (this.status != OrderStatus.STOCK_RESERVED && this.status != OrderStatus.PAYMENT_PENDING) {
+			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
+		}
+		this.status = OrderStatus.PAYMENT_PENDING;
+	}
+
+	public void markPaid() {
+		validateTransition(OrderStatus.PAYMENT_PENDING);
+		this.status = OrderStatus.PAID;
+	}
+
+	public void markFailed() {
+		if (this.status != OrderStatus.CREATED
+				&& this.status != OrderStatus.STOCK_RESERVED
+				&& this.status != OrderStatus.PAYMENT_PENDING) {
+			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
+		}
+		this.status = OrderStatus.FAILED;
+	}
+
+	public void markCanceled() {
+		validateTransition(OrderStatus.PAID);
+		this.status = OrderStatus.CANCELED;
+	}
+
+	private void validateTransition(OrderStatus expected) {
+		if (this.status != expected) {
+			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
+		}
+	}
 
 }

@@ -37,4 +37,13 @@ public class OrderItem extends BaseEntity {
 	@Column(name = "unit_price", nullable = false)
 	private Long unitPrice;
 
+	public static OrderItem create(Long orderId, Long productId, int quantity, Long unitPrice) {
+		return OrderItem.builder()
+				.orderId(orderId)
+				.productId(productId)
+				.quantity(quantity)
+				.unitPrice(unitPrice)
+				.build();
+	}
+
 }
