@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -28,10 +29,26 @@ public class PaymentCancel extends BaseEntity {
 	@Column(name = "payment_id", nullable = false)
 	private Long paymentId;
 
+	@Column(name = "refund_id")
+	private Long refundId;
+
 	@Column(name = "cancel_amount", nullable = false)
 	private Long cancelAmount;
 
 	@Column(length = 200)
 	private String reason;
+
+	@Column(name = "canceled_at", nullable = false)
+	private LocalDateTime canceledAt;
+
+	public static PaymentCancel create(Long paymentId, Long refundId, Long cancelAmount, String reason) {
+		return PaymentCancel.builder()
+				.paymentId(paymentId)
+				.refundId(refundId)
+				.cancelAmount(cancelAmount)
+				.reason(reason)
+				.canceledAt(LocalDateTime.now())
+				.build();
+	}
 
 }
