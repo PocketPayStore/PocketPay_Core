@@ -41,4 +41,36 @@ public class SagaLog extends BaseEntity {
 	@Column(name = "error_message", length = 500)
 	private String errorMessage;
 
+	public static SagaLog create(Long orderId, SagaStep step) {
+		return SagaLog.builder()
+				.orderId(orderId)
+				.step(step)
+				.status(SagaStatus.STARTED)
+				.build();
+	}
+
+	public void success() {
+		this.status = SagaStatus.SUCCESS;
+	}
+
+	public void fail(String errorMessage) {
+		this.status = SagaStatus.FAILED;
+		this.errorMessage = truncate(errorMessage);
+	}
+
+	public void compensating() {
+		this.status = SagaStatus.COMPENSATING;
+	}
+
+	public void compensated() {
+		this.status = SagaStatus.COMPENSATED;
+	}
+
+	private String truncate(String message) {
+		if (message == null) {
+			return null;
+		}
+		return message.length() > 500 ? message.substring(0, 500) : message;
+	}
+
 }

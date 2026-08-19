@@ -53,4 +53,17 @@ public class Settlement extends BaseEntity {
 	@Column(name = "settled_at")
 	private LocalDateTime settledAt;
 
+	public static Settlement create(Long paymentId, Long sellerId, Long amount,
+									 Long pgFeeAmount, Long platformFeeAmount, Long netAmount) {
+		return Settlement.builder()
+				.paymentId(paymentId)
+				.sellerId(sellerId)
+				.amount(amount)
+				.pgFeeAmount(pgFeeAmount)
+				.platformFeeAmount(platformFeeAmount)
+				.netAmount(netAmount)
+				.status(SettlementStatus.PENDING)
+				.build();
+	}
+
 }
