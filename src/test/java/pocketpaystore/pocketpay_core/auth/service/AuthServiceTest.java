@@ -12,7 +12,7 @@ import pocketpaystore.pocketpay_core.auth.dto.response.LoginResponse;
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.AuthErrorCode;
 import pocketpaystore.pocketpay_core.member.domain.Member;
-import pocketpaystore.pocketpay_core.member.domain.MemberRepository;
+import pocketpaystore.pocketpay_core.member.repository.MemberRepository;
 import pocketpaystore.pocketpay_core.member.domain.MemberRole;
 import pocketpaystore.pocketpay_core.support.ServiceTest;
 
@@ -27,7 +27,6 @@ class AuthServiceTest extends ServiceTest {
 	@Test
 	@DisplayName("이메일과 비밀번호가 일치하면 Access Token을 발급한다")
 	void login_success() {
-		// given
 		Member member = Member.builder()
 				.email("test@test.com")
 				.password("test1234")
@@ -37,23 +36,18 @@ class AuthServiceTest extends ServiceTest {
 		memberRepository.save(member);
 		LoginRequest request = new LoginRequest("test@test.com", "test1234");
 
-		// when
 		LoginResponse response = authService.login(request);
 
-		// then
 		assertThat(response.getAccessToken()).isNotBlank();
 	}
 
 	@Test
 	@DisplayName("존재하지 않는 이메일로 로그인하면 예외가 발생한다")
 	void login_memberNotFound() {
-		// given
 		LoginRequest request = new LoginRequest("nobody@test.com", "test1234");
 
-		// when
 		Throwable thrown = catchThrowable(() -> authService.login(request));
 
-		// then
 		assertThat(thrown).isInstanceOf(CustomException.class);
 		assertThat(((CustomException) thrown).getErrorCode()).isEqualTo(AuthErrorCode.MEMBER_NOT_FOUND);
 	}
@@ -61,7 +55,6 @@ class AuthServiceTest extends ServiceTest {
 	@Test
 	@DisplayName("비밀번호가 일치하지 않으면 예외가 발생한다")
 	void login_invalidPassword() {
-		// given
 		Member member = Member.builder()
 				.email("test@test.com")
 				.password("test1234")
@@ -71,10 +64,8 @@ class AuthServiceTest extends ServiceTest {
 		memberRepository.save(member);
 		LoginRequest request = new LoginRequest("test@test.com", "wrong-password");
 
-		// when
 		Throwable thrown = catchThrowable(() -> authService.login(request));
 
-		// then
 		assertThat(thrown).isInstanceOf(CustomException.class);
 		assertThat(((CustomException) thrown).getErrorCode()).isEqualTo(AuthErrorCode.INVALID_PASSWORD);
 	}
