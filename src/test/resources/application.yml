@@ -6,7 +6,38 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+  data:
+    redis:
+      connect-timeout: 2s
+      timeout: 2s
 
 jwt:
   secret: jkZo7UPI+NraSo/EQTCj41IRHSsOuLD7ah5M2arIANcJUTH/bIRWFYzvztR6JvIOB6qKWo/GS9B5lOygQJdE3A==
   expiry-hours: 1
+
+idempotency:
+  lock-ttl-seconds: 60
+  result-ttl-seconds: 60
+  lock-wait-timeout-millis: 5000
+  lock-poll-interval-millis: 50
+
+payment:
+  point-earn-rate: 0.01
+
+pg:
+  provider-name: mock-pg
+  webhook:
+    secret: test-webhook-secret
+
+mock-pg:
+  base-url: http://localhost:19999
+
+settlement:
+  pg-fee-rate: 0.029
+  platform-fee-rate: 0.05
+
+resilience4j:
+  retry:
+    instances:
+      pgClient:
+        max-attempts: 2
