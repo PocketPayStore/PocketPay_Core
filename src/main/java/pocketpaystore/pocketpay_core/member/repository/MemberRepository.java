@@ -1,8 +1,10 @@
-package pocketpaystore.pocketpay_core.member.domain;
+package pocketpaystore.pocketpay_core.member.repository;
 
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import pocketpaystore.pocketpay_core.member.domain.Member;
 
 public interface MemberRepository extends JpaRepository<Member, Long> {
 

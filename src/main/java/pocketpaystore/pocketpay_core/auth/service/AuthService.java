@@ -9,7 +9,7 @@ import pocketpaystore.pocketpay_core.auth.dto.response.LoginResponse;
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.AuthErrorCode;
 import pocketpaystore.pocketpay_core.member.domain.Member;
-import pocketpaystore.pocketpay_core.member.domain.MemberRepository;
+import pocketpaystore.pocketpay_core.member.repository.MemberRepository;
 
 @Service
 @RequiredArgsConstructor
