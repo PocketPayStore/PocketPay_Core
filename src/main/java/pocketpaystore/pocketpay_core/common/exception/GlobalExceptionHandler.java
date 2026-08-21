@@ -2,7 +2,6 @@ package pocketpaystore.pocketpay_core.common.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -51,14 +50,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(ErrorResponse.builder().code("VALIDATION_ERROR")
                         .message(e.getHeaderName() + " 헤더가 필요합니다.").build());
-    }
-
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(ObjectOptimisticLockingFailureException e) {
-        log.error("[Common] 낙관적 락 충돌(재시도 소진): {}", e.getMessage());
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.builder().code("CONCURRENT_UPDATE_CONFLICT")
-                        .message("다른 요청과 충돌해 처리하지 못했습니다. 잠시 후 다시 시도해주세요.").build());
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

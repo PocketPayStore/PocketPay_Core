@@ -13,7 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import pocketpaystore.pocketpay_core.member.domain.Member;
 import pocketpaystore.pocketpay_core.member.domain.MemberRole;
@@ -41,7 +40,7 @@ class StockServiceConcurrencyTest {
 	private StockRepository stockRepository;
 
 	@Test
-	@DisplayName("동일 상품에 대한 재고 예약 요청이 동시에 들어와도 낙관적 락 재시도로 전부 정확히 반영된다")
+	@DisplayName("동일 상품에 대한 재고 예약 요청이 동시에 들어와도 비관적 락으로 순차 처리되어 전부 정확히 반영된다")
 	void concurrentReserve_noLostUpdates() throws InterruptedException {
 		Member seller = memberRepository.save(
 				Member.builder().email("seller-" + UUID.randomUUID() + "@test.com")
@@ -55,7 +54,6 @@ class StockServiceConcurrencyTest {
 		CountDownLatch startLatch = new CountDownLatch(1);
 		CountDownLatch doneLatch = new CountDownLatch(CONCURRENT_REQUESTS);
 		AtomicInteger successCount = new AtomicInteger();
-		AtomicInteger exhaustedRetryCount = new AtomicInteger();
 		AtomicInteger unexpectedFailureCount = new AtomicInteger();
 
 		for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
@@ -64,8 +62,6 @@ class StockServiceConcurrencyTest {
 					startLatch.await();
 					stockService.reserve(product.getId(), 1);
 					successCount.incrementAndGet();
-				} catch (ObjectOptimisticLockingFailureException e) {
-					exhaustedRetryCount.incrementAndGet();
 				} catch (Exception e) {
 					unexpectedFailureCount.incrementAndGet();
 				} finally {
@@ -79,10 +75,10 @@ class StockServiceConcurrencyTest {
 
 		assertThat(finished).isTrue();
 		assertThat(unexpectedFailureCount.get()).isZero();
-		assertThat(successCount.get() + exhaustedRetryCount.get()).isEqualTo(CONCURRENT_REQUESTS);
+		assertThat(successCount.get()).isEqualTo(CONCURRENT_REQUESTS);
 
 		Stock stock = stockRepository.findByProductId(product.getId()).orElseThrow();
-		assertThat(stock.getReservedQuantity()).isEqualTo(successCount.get());
+		assertThat(stock.getReservedQuantity()).isEqualTo(CONCURRENT_REQUESTS);
 	}
 
 }
