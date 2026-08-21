@@ -53,12 +53,6 @@ dependencies {
     // ── 장애 대응 (Retry는 처음부터, CircuitBreaker/TimeLimiter는 요소 4에서) ──────────
     implementation 'io.github.resilience4j:resilience4j-spring-boot3'
 
-    // ── 재시도 (요소 3a — 재고 낙관적 락 충돌 시 지터 재시도, @Retryable) ────────────────
-    // spring-boot-starter-aop는 Boot 4에서 별도 아티팩트로 안 나온다 — @EnableRetry 기본
-    // 모드(PROXY)는 @Transactional과 마찬가지로 spring-aop(spring-context 전이 의존성)만
-    // 있으면 동작해서 AspectJ 위빙용 aspectjweaver는 필요 없다.
-    implementation 'org.springframework.retry:spring-retry'
-
     // ── Auth (JWT) ────────────────────────────────────────────────────────────
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
