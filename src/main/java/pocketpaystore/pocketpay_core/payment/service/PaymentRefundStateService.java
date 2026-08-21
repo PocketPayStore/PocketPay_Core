@@ -31,7 +31,7 @@ public class PaymentRefundStateService {
 
 	@Transactional
 	public PreparedRefund prepare(Long orderId, int quantity, String idempotencyKey) {
-		Payment payment = paymentRepository.findRefundableByOrderIdForUpdate(orderId)
+		Payment payment = paymentRepository.findRefundableByOrderIdWithLock(orderId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 
 		OrderItem orderItem = orderItemRepository.findByOrderId(orderId)
