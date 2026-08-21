@@ -24,6 +24,8 @@ import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
+import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
+import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class OrderServiceTest extends RedisTestContainer {
@@ -40,6 +42,9 @@ class OrderServiceTest extends RedisTestContainer {
 	@Autowired
 	private StockRepository stockRepository;
 
+	@Autowired
+	private VendorRepository vendorRepository;
+
 	private Member buyer;
 	private Product product;
 
@@ -47,11 +52,10 @@ class OrderServiceTest extends RedisTestContainer {
 	void setUp() {
 		buyer = memberRepository.save(
 				Member.builder().email(uniqueEmail()).password("test1234").name("구매자").role(MemberRole.USER).build());
-		Member seller = memberRepository.save(
-				Member.builder().email(uniqueEmail()).password("test1234").name("판매자").role(MemberRole.USER).build());
+		Vendor vendor = vendorRepository.save(Vendor.builder().name("테스트 업체").build());
 
 		product = productRepository.save(
-				Product.builder().sellerId(seller.getId()).name("이상해씨 카드").price(1000L).build());
+				Product.builder().vendorId(vendor.getId()).name("이상해씨 카드").price(1000L).build());
 		stockRepository.save(Stock.builder().productId(product.getId()).totalQuantity(10).reservedQuantity(0).soldQuantity(0).build());
 	}
 

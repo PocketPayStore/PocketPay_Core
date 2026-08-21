@@ -41,6 +41,8 @@ import pocketpaystore.pocketpay_core.pg.dto.response.CancelResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
+import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
+import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class PaymentRefundConcurrencyTest extends RedisTestContainer {
@@ -72,6 +74,9 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 	@Autowired
 	private PaymentCancelRepository paymentCancelRepository;
 
+	@Autowired
+	private VendorRepository vendorRepository;
+
 	@MockitoBean
 	private PgClient pgClient;
 
@@ -86,11 +91,9 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 		Member buyer = memberRepository.save(
 				Member.builder().email("buyer-" + UUID.randomUUID() + "@test.com")
 						.password("test1234").name("구매자").role(MemberRole.USER).build());
-		Member seller = memberRepository.save(
-				Member.builder().email("seller-" + UUID.randomUUID() + "@test.com")
-						.password("test1234").name("판매자").role(MemberRole.USER).build());
+		Vendor vendor = vendorRepository.save(Vendor.builder().name("테스트 업체").build());
 		Product product = productRepository.save(
-				Product.builder().sellerId(seller.getId()).name("환불 테스트 카드").price(UNIT_PRICE).build());
+				Product.builder().vendorId(vendor.getId()).name("환불 테스트 카드").price(UNIT_PRICE).build());
 
 		Order order = orderRepository.save(
 				Order.create("ORD-" + UUID.randomUUID(), buyer.getId(), PAYMENT_AMOUNT, UUID.randomUUID().toString()));

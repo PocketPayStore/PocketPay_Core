@@ -33,6 +33,8 @@ import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
+import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
+import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
@@ -55,6 +57,9 @@ class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 	@Autowired
 	private OrderRepository orderRepository;
 
+	@Autowired
+	private VendorRepository vendorRepository;
+
 	@MockitoBean
 	private PgClient pgClient;
 
@@ -71,10 +76,9 @@ class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 	void setUp() {
 		buyer = memberRepository.save(
 				Member.builder().email(uniqueEmail()).password("test1234").name("구매자").role(MemberRole.USER).build());
-		Member seller = memberRepository.save(
-				Member.builder().email(uniqueEmail()).password("test1234").name("판매자").role(MemberRole.USER).build());
+		Vendor vendor = vendorRepository.save(Vendor.builder().name("테스트 업체").build());
 		Product product = productRepository.save(
-				Product.builder().sellerId(seller.getId()).name("뮤츠 카드").price(15_000L).build());
+				Product.builder().vendorId(vendor.getId()).name("뮤츠 카드").price(15_000L).build());
 		productId = product.getId();
 		stockRepository.save(Stock.builder().productId(productId).totalQuantity(5).reservedQuantity(0).soldQuantity(0).build());
 	}

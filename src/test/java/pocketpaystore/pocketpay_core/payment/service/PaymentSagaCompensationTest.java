@@ -45,6 +45,8 @@ import pocketpaystore.pocketpay_core.saga.domain.SagaStatus;
 import pocketpaystore.pocketpay_core.saga.domain.SagaStep;
 import pocketpaystore.pocketpay_core.saga.repository.SagaLogRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
+import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
+import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class PaymentSagaCompensationTest extends RedisTestContainer {
@@ -73,6 +75,9 @@ class PaymentSagaCompensationTest extends RedisTestContainer {
 	@Autowired
 	private SagaLogRepository sagaLogRepository;
 
+	@Autowired
+	private VendorRepository vendorRepository;
+
 	@MockitoBean
 	private PgClient pgClient;
 
@@ -86,10 +91,9 @@ class PaymentSagaCompensationTest extends RedisTestContainer {
 	void setUp() {
 		buyer = memberRepository.save(
 				Member.builder().email(uniqueEmail()).password("test1234").name("구매자").role(MemberRole.USER).build());
-		Member seller = memberRepository.save(
-				Member.builder().email(uniqueEmail()).password("test1234").name("판매자").role(MemberRole.USER).build());
+		Vendor vendor = vendorRepository.save(Vendor.builder().name("테스트 업체").build());
 		Product product = productRepository.save(
-				Product.builder().sellerId(seller.getId()).name("나인테일 카드").price(20_000L).build());
+				Product.builder().vendorId(vendor.getId()).name("나인테일 카드").price(20_000L).build());
 		productId = product.getId();
 		stockRepository.save(Stock.builder().productId(productId).totalQuantity(5).reservedQuantity(0).soldQuantity(0).build());
 	}

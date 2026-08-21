@@ -22,17 +22,22 @@ VALUES (1, 100000, NOW(6), NOW(6), FALSE),
        (9, 100000, NOW(6), NOW(6), FALSE),
        (10, 100000, NOW(6), NOW(6), FALSE);
 
-INSERT INTO product (id, seller_id, name, price, created_at, updated_at, is_deleted)
+INSERT INTO vendor (id, name, created_at, updated_at, is_deleted)
+VALUES (1, '포켓카드 유통', NOW(6), NOW(6), FALSE),
+       (2, '트레이너즈 카드샵', NOW(6), NOW(6), FALSE),
+       (3, '레어카드 컬렉션', NOW(6), NOW(6), FALSE);
+
+INSERT INTO product (id, vendor_id, name, price, created_at, updated_at, is_deleted)
 VALUES (1, 1, '이상해씨 커먼카드', 1000, NOW(6), NOW(6), FALSE),
        (2, 1, '리자몽 GX 부스터팩', 5000, NOW(6), NOW(6), FALSE),
-       (3, 2, '스타터 덱 세트', 12000, NOW(6), NOW(6), FALSE),
+       (3, 1, '스타터 덱 세트', 12000, NOW(6), NOW(6), FALSE),
        (4, 2, '피카츄 SR 싱글카드', 15000, NOW(6), NOW(6), FALSE),
-       (5, 3, '갸라도스 레어카드', 18000, NOW(6), NOW(6), FALSE),
-       (6, 3, '나인테일 프로모카드', 22000, NOW(6), NOW(6), FALSE),
-       (7, 4, '한정판 컬렉션 박스', 30000, NOW(6), NOW(6), FALSE),
-       (8, 5, '부스터박스(10팩입)', 45000, NOW(6), NOW(6), FALSE),
-       (9, 6, '뮤츠 EX 싱글카드', 45000, NOW(6), NOW(6), FALSE),
-       (10, 7, '골드 스타 레어카드', 80000, NOW(6), NOW(6), FALSE);
+       (5, 2, '갸라도스 레어카드', 18000, NOW(6), NOW(6), FALSE),
+       (6, 2, '나인테일 프로모카드', 22000, NOW(6), NOW(6), FALSE),
+       (7, 2, '한정판 컬렉션 박스', 30000, NOW(6), NOW(6), FALSE),
+       (8, 3, '부스터박스(10팩입)', 45000, NOW(6), NOW(6), FALSE),
+       (9, 3, '뮤츠 EX 싱글카드', 45000, NOW(6), NOW(6), FALSE),
+       (10, 3, '골드 스타 레어카드', 80000, NOW(6), NOW(6), FALSE);
 
 INSERT INTO stock (product_id, total_quantity, reserved_quantity, sold_quantity, created_at, updated_at, is_deleted)
 VALUES (1, 500, 0, 0, NOW(6), NOW(6), FALSE),

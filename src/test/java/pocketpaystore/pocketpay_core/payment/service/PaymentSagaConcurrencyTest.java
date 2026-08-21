@@ -39,6 +39,8 @@ import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
+import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
+import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class PaymentSagaConcurrencyTest extends RedisTestContainer {
@@ -67,6 +69,9 @@ class PaymentSagaConcurrencyTest extends RedisTestContainer {
 	@Autowired
 	private PointBalanceRepository pointBalanceRepository;
 
+	@Autowired
+	private VendorRepository vendorRepository;
+
 	@MockitoBean
 	private PgClient pgClient;
 
@@ -82,10 +87,9 @@ class PaymentSagaConcurrencyTest extends RedisTestContainer {
 		Member buyer = memberRepository.save(
 				Member.builder().email(uniqueEmail()).password("test1234").name("구매자").role(MemberRole.USER).build());
 		pointBalanceRepository.save(PointBalance.create(buyer.getId()));
-		Member seller = memberRepository.save(
-				Member.builder().email(uniqueEmail()).password("test1234").name("판매자").role(MemberRole.USER).build());
+		Vendor vendor = vendorRepository.save(Vendor.builder().name("테스트 업체").build());
 		Product product = productRepository.save(
-				Product.builder().sellerId(seller.getId()).name("골드스타 카드").price(1000L).build());
+				Product.builder().vendorId(vendor.getId()).name("골드스타 카드").price(1000L).build());
 		stockRepository.save(Stock.builder().productId(product.getId()).totalQuantity(200).reservedQuantity(0).soldQuantity(0).build());
 
 		String orderNumber = orderService.createOrder(buyer.getId(),

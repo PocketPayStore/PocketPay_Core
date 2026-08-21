@@ -1,4 +1,4 @@
-package pocketpaystore.pocketpay_core.product.domain;
+package pocketpaystore.pocketpay_core.vendor.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,23 +15,17 @@ import pocketpaystore.pocketpay_core.common.BaseEntity;
 
 @Getter
 @Entity
-@Table(name = "product")
+@Table(name = "vendor")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
-public class Product extends BaseEntity {
+public class Vendor extends BaseEntity {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@Column(name = "vendor_id", nullable = false)
-	private Long vendorId;
-
 	@Column(nullable = false, length = 200)
 	private String name;
-
-	@Column(nullable = false)
-	private Long price;
 
 }
