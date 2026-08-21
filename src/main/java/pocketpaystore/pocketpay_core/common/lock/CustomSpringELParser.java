@@ -4,7 +4,6 @@ import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 
-/** {@link DistributedLock#key()}에 적은 SpEL 식을 실제 메서드 인자 값으로 풀어준다. */
 final class CustomSpringELParser {
 
 	private CustomSpringELParser() {
