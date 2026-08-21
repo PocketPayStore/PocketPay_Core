@@ -21,8 +21,6 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.service.StockService;
 
-// @Transactional을 따로 안 붙인다 — 붙이면 락을 잡기 전에 커넥션을 먼저 물게 된다.
-// 트랜잭션은 @DistributedLock(AopForTransaction)이 관리한다.
 @Service
 @RequiredArgsConstructor
 class OrderCreationService {
