@@ -80,7 +80,7 @@ public class PaymentStateService {
 	}
 
 	private Order findOrderForUpdate(Long orderId) {
-		return orderRepository.findByIdForUpdate(orderId)
+		return orderRepository.findByIdWithLock(orderId)
 				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
 	}
 
