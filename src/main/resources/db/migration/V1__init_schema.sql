@@ -14,21 +14,32 @@ CREATE TABLE member
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE vendor
+(
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(200) NOT NULL,
+    created_at DATETIME(6)  NOT NULL,
+    updated_at DATETIME(6)  NOT NULL,
+    is_deleted BOOLEAN      NOT NULL DEFAULT FALSE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE product
 (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    seller_id  BIGINT       NOT NULL,
+    vendor_id  BIGINT       NOT NULL,
     name       VARCHAR(200) NOT NULL,
     price      BIGINT       NOT NULL,
     created_at DATETIME(6)  NOT NULL,
     updated_at DATETIME(6)  NOT NULL,
     is_deleted BOOLEAN      NOT NULL DEFAULT FALSE,
-    CONSTRAINT fk_product_seller FOREIGN KEY (seller_id) REFERENCES member (id)
+    CONSTRAINT fk_product_vendor FOREIGN KEY (vendor_id) REFERENCES vendor (id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX idx_product_seller_id ON product (seller_id);
+CREATE INDEX idx_product_vendor_id ON product (vendor_id);
 
 CREATE TABLE stock
 (
@@ -192,7 +203,7 @@ CREATE TABLE settlement
 (
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     payment_id          BIGINT      NOT NULL,
-    seller_id           BIGINT      NOT NULL,
+    vendor_id           BIGINT      NOT NULL,
     amount              BIGINT      NOT NULL,
     pg_fee_amount       BIGINT      NOT NULL,
     platform_fee_amount BIGINT      NOT NULL,
@@ -203,14 +214,14 @@ CREATE TABLE settlement
     updated_at          DATETIME(6) NOT NULL,
     is_deleted          BOOLEAN     NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_settlement_payment FOREIGN KEY (payment_id) REFERENCES payment (id),
-    CONSTRAINT fk_settlement_seller FOREIGN KEY (seller_id) REFERENCES member (id),
+    CONSTRAINT fk_settlement_vendor FOREIGN KEY (vendor_id) REFERENCES vendor (id),
     CONSTRAINT ck_settlement_status CHECK (status IN ('PENDING', 'SETTLED', 'FAILED'))
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_settlement_payment_id ON settlement (payment_id);
-CREATE INDEX idx_settlement_seller_id ON settlement (seller_id);
+CREATE INDEX idx_settlement_vendor_id ON settlement (vendor_id);
 
 CREATE TABLE saga_log
 (

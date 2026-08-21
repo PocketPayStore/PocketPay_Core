@@ -1,6 +1,6 @@
 # CLAUDE.md — payment-core
 
-`payment-core`는 포켓몬 카드 스토어의 결제 코어 서버다. 스토어가 직접 재고를 파는 게 아니라, 회원이 자기 카드를 등록하면 다른 회원이 사가는 **위탁판매(마켓플레이스)** 구조다. 고객 화면은 없고, `/api/**` REST API만 제공한다. 이 문서는 이 레포를 개발할 때 필요한 내용만 담는다.
+`payment-core`는 포켓몬 카드 스토어의 결제 코어 서버다. 회원이 직접 카드를 등록해서 파는 구조가 아니라, **스토어가 업체(카드 공급사)로부터 카드팩을 공급받아 특정 시간에 판매하고, 판매되면 그 대금이 업체에게 정산되는 구조**다. 회원은 전부 구매자다. 고객 화면은 없고, `/api/**` REST API만 제공한다. 이 문서는 이 레포를 개발할 때 필요한 내용만 담는다.
 
 ---
 
@@ -97,7 +97,7 @@ public interface PgClient {
 4. **가용 재고 계산(`total_quantity - reserved_quantity - sold_quantity`)은 도메인 서비스 한 곳에만 구현한다.** 여러 곳에 중복 구현하지 않는다.
 5. **PG 승인처럼 외부 호출은 트랜잭션 밖에서 동기로 수행한다.** DB 트랜잭션이 PG 상태까지 롤백해주지 않으므로, PG 승인 이후 단계가 실패하면 명시적으로 PG 취소 API를 호출하는 보상 로직을 둔다.
 6. **포인트 잔액은 `point_balance`에서만 갱신하고, 모든 변동은 `point_ledger`에 append-only로 남긴다.**
-7. **한 주문(order)에는 한 상품(product) 종류만 담을 수 있다.** 수량은 자유롭게 담을 수 있지만, 서로 다른 상품(당연히 서로 다른 판매자 상품도 포함)을 한 주문에 함께 담지 못하게 막는다 — 상품이 하나면 판매자도 자동으로 하나라, `settlement`이 결제 1건당 1건으로 끝나는 전제가 여기서 나온다.
+7. **한 주문(order)에는 한 상품(product) 종류만 담을 수 있다.** 수량은 자유롭게 담을 수 있지만, 서로 다른 상품(당연히 서로 다른 업체 상품도 포함)을 한 주문에 함께 담지 못하게 막는다 — 상품이 하나면 공급 업체도 자동으로 하나라, `settlement`이 결제 1건당 1건으로 끝나는 전제가 여기서 나온다.
 8. **멱등키 응답은 TTL을 가진 캐시로 다룬다.** `Idempotency-Key`로 성공 응답을 만들면 Redis에 `{idempotencyKey → 응답}`을 TTL과 함께 저장하고, TTL 내 동일 키 재요청은 이 캐시된 응답을 그대로 반환한다. **TTL이 지난 뒤 동일 키가 다시 오면 성공 응답을 다시 주는 게 아니라 명시적인 "중복 승인 오류"로 처리한다.** (결제 승인 API(`/api/payments`)엔 구현됨 — `IdempotencyKeyGuard.executeIdempotent`가 락을 못 잡으면 즉시 거절하는 대신 처리 중인 요청이 끝날 때까지 대기했다가 캐시된 응답을 반환한다. 주문 생성/환불 요청 API는 처리 자체가 빠르고 재요청 시 같은 응답을 그대로 받아야 할 절박함이 적어서, 3번 규칙의 fail-fast SETNX(`tryAcquire`)만 쓴다.)
 9. **여러 테이블에 동시에 비관적 락을 걸지 않는다.** 요소 3c(재고 선점-만료 경합)에서 만료 대상 거래(`orders`)에만 비관적 락을 걸고, 재고 등 유관 도메인 상태 변경은 별도 트랜잭션/이벤트로 비동기 처리하는 이유가 이거다 — 여러 테이블을 동시에 비관적 락으로 잡으면 데드락이 생길 수 있다.
 10. **비동기 이벤트(요소 2 RabbitMQ 도입 이후)는 무조건 적용하지 않는다.** 컨슈머는 이벤트를 처리하기 전에 "지금 이걸 적용해도 되는 상태인가"를 먼저 검증한다. 순서가 안 맞으면(예: 결제완료보다 환불완료 이벤트가 먼저 소비되는 경우) 명시적으로 실패시켜 재처리 큐로 돌린다.
@@ -140,16 +140,25 @@ public interface PgClient {
 
 ### 상품/재고
 
+**vendor** (카드팩을 공급하는 업체 — 정산 대상)
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | BIGINT PK | |
+| name | VARCHAR(200) | 업체명 |
+| created_at | DATETIME | |
+
+> 최소 구성만 둔다. 실제 입금 계좌·사업자번호 같은 정산 실행 정보는 이 레포 범위 밖(정산 배치 담당자가 수동으로 처리)이고, 여기서는 정산 대상을 식별하는 용도로만 쓴다.
+
 **product**
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | BIGINT PK | |
-| seller_id | BIGINT FK→member | 카드를 등록한(파는) 회원. 위탁판매 구조라 필수 |
+| vendor_id | BIGINT FK→vendor | 이 카드팩을 공급한 업체 |
 | name | VARCHAR(200) | 예: 리자몽 GX 부스터팩 |
 | price | BIGINT | 원 단위 |
 | created_at | DATETIME | |
 
-> 판매 상품은 전부 한정판이라고 가정한다. 스토어가 직접 파는 재고는 없다 — 모든 상품은 회원이 등록한 것이다 (도메인 규칙 7번).
+> 판매 상품은 전부 한정판이라고 가정한다. 스토어가 직접 재고를 보유·등록하지 않고, 업체로부터 공급받은 카드팩을 특정 시간에 판매한다 — 회원이 카드를 등록하는 위탁판매 구조가 아니다(도메인 규칙 7번). "특정 시간에 판매를 시작한다"는 개념(드롭/한정 판매 타이밍)은 아직 스키마에 반영하지 않는다 — 이번엔 판매 주체를 회원(member)에서 업체(vendor)로 바꾸는 것까지만 다룬다.
 
 **stock** (요소 3a — 재고 동시성 실험의 핵심 테이블)
 | 컬럼 | 타입 | 설명 |
@@ -239,16 +248,16 @@ public interface PgClient {
 |---|---|---|
 | id | BIGINT PK | |
 | payment_id | BIGINT FK | |
-| seller_id | BIGINT FK→member | 정산금을 지급받을 판매자 |
+| vendor_id | BIGINT FK→vendor | 정산금을 지급받을 업체 |
 | amount | BIGINT | 정산 대상 금액(결제 금액) |
 | pg_fee_amount | BIGINT | PG 수수료 |
 | platform_fee_amount | BIGINT | 플랫폼(우리) 수수료 |
-| net_amount | BIGINT | 판매자 실지급액 = amount − pg_fee_amount − platform_fee_amount |
+| net_amount | BIGINT | 업체 실지급액 = amount − pg_fee_amount − platform_fee_amount |
 | status | ENUM | PENDING / SETTLED / FAILED |
-| settled_at | DATETIME nullable | 배치가 실제 판매자에게 지급 처리한 시각 |
+| settled_at | DATETIME nullable | 배치가 실제 업체에게 지급 처리한 시각 |
 | created_at | DATETIME | 사가의 "정산 데이터 적재" 단계에서 PENDING으로 생성되는 시각 |
 
-> 실제 지급 처리는 별도 배치 잡(요소 5)이 이 테이블을 읽어서 수행한다. 한 주문은 한 상품 종류만 담을 수 있어서(도메인 규칙 7번) 판매자도 자동으로 하나고, payment 1건당 settlement 1건이다.
+> 실제 지급 처리는 별도 배치 잡(요소 5)이 이 테이블을 읽어서 수행한다. 한 주문은 한 상품 종류만 담을 수 있어서(도메인 규칙 7번) 업체도 자동으로 하나고, payment 1건당 settlement 1건이다.
 
 ### Saga / Outbox
 
@@ -304,9 +313,9 @@ payment 1---N pg_callback_log (pg_transaction_id 매칭)
 payment 1---N refund_request
 product 1---1 stock
 product 1---N order_item
-member 1---N product (판매자)
+vendor 1---N product (공급 업체)
 payment 1---N settlement
-member 1---N settlement (판매자, 지급 대상)
+vendor 1---N settlement (지급 대상)
 ```
 
 ---
@@ -315,7 +324,7 @@ member 1---N settlement (판매자, 지급 대상)
 
 ### 이 레포가 제공하는 API
 
-상품/포인트 조회 같은 "화면용" API는 만들지 않는다. 테스트 회원(id 1~10, `test{id}@test.com`/`test{id}`)과 상품/재고는 Flyway 시드 데이터(`V2__seed_data.sql`, product id 1~10, 판매자는 회원 1~7에 분산, 재고는 1~500으로 다양하게)로 고정 ID를 심어두고 사용한다.
+상품/포인트 조회 같은 "화면용" API는 만들지 않는다. 테스트 회원(id 1~10, `test{id}@test.com`/`test{id}`)과 상품/재고는 Flyway 시드 데이터(`V2__seed_data.sql`, vendor id 1~3, product id 1~10은 vendor 1~3에 분산 공급, 재고는 1~500으로 다양하게)로 고정 ID를 심어두고 사용한다.
 
 | Method | Endpoint | 설명 | 관련 요소 |
 |---|---|---|---|

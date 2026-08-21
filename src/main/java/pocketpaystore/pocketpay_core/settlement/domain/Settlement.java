@@ -31,8 +31,8 @@ public class Settlement extends BaseEntity {
 	@Column(name = "payment_id", nullable = false)
 	private Long paymentId;
 
-	@Column(name = "seller_id", nullable = false)
-	private Long sellerId;
+	@Column(name = "vendor_id", nullable = false)
+	private Long vendorId;
 
 	@Column(nullable = false)
 	private Long amount;
@@ -53,11 +53,11 @@ public class Settlement extends BaseEntity {
 	@Column(name = "settled_at")
 	private LocalDateTime settledAt;
 
-	public static Settlement create(Long paymentId, Long sellerId, Long amount,
+	public static Settlement create(Long paymentId, Long vendorId, Long amount,
 									 Long pgFeeAmount, Long platformFeeAmount, Long netAmount) {
 		return Settlement.builder()
 				.paymentId(paymentId)
-				.sellerId(sellerId)
+				.vendorId(vendorId)
 				.amount(amount)
 				.pgFeeAmount(pgFeeAmount)
 				.platformFeeAmount(platformFeeAmount)

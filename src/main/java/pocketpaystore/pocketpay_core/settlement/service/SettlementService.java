@@ -50,7 +50,7 @@ public class SettlementService {
 		long netAmount = amount - pgFeeAmount - platformFeeAmount;
 
 		Settlement settlement = Settlement.create(
-			paymentId, product.getSellerId(), amount, pgFeeAmount, platformFeeAmount, netAmount);
+			paymentId, product.getVendorId(), amount, pgFeeAmount, platformFeeAmount, netAmount);
 		settlementRepository.save(settlement);
 	}
 
