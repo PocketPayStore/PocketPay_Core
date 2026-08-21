@@ -32,6 +32,9 @@ dependencies {
     // ── Cache / Redis ─────────────────────────────────────────────────────────
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
+    // ── 분산락 ─────
+    implementation 'org.redisson:redisson-spring-boot-starter:4.3.0'
+
     // ── Database ──────────────────────────────────────────────────────────────
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -52,6 +55,9 @@ dependencies {
 
     // ── 장애 대응 (Retry는 처음부터, CircuitBreaker/TimeLimiter는 요소 4에서) ──────────
     implementation 'io.github.resilience4j:resilience4j-spring-boot3'
+
+    // ── AOP (common.lock.DistributedLockAop — @Around("@annotation(...)") 포인트컷) ───
+    implementation 'org.aspectj:aspectjweaver'
 
     // ── Auth (JWT) ────────────────────────────────────────────────────────────
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'

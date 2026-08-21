@@ -17,11 +17,12 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
+import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
 import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-class StockServiceConcurrencyTest {
+class StockServiceConcurrencyTest extends RedisTestContainer {
 
 	private static final int CONCURRENT_REQUESTS = 10;
 
