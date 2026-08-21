@@ -37,7 +37,6 @@ CREATE TABLE stock
     total_quantity     INT         NOT NULL,
     reserved_quantity  INT         NOT NULL DEFAULT 0,
     sold_quantity      INT         NOT NULL DEFAULT 0,
-    version            BIGINT      NOT NULL DEFAULT 0,
     created_at         DATETIME(6) NOT NULL,
     updated_at         DATETIME(6) NOT NULL,
     is_deleted         BOOLEAN     NOT NULL DEFAULT FALSE,

@@ -1,36 +1,52 @@
 package pocketpaystore.pocketpay_core.product.service;
 
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+
+import pocketpaystore.pocketpay_core.common.exception.CustomException;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.ProductErrorCode;
+import pocketpaystore.pocketpay_core.order.domain.OrderItem;
+import pocketpaystore.pocketpay_core.order.repository.OrderItemRepository;
+import pocketpaystore.pocketpay_core.product.domain.Stock;
+import pocketpaystore.pocketpay_core.product.repository.StockRepository;
 
 @Service
 @RequiredArgsConstructor
 public class StockService {
 
-	private static final int MAX_ATTEMPTS = 3;
+	private final StockRepository stockRepository;
+	private final OrderItemRepository orderItemRepository;
 
-	private final StockPersistenceService stockPersistenceService;
-
-	@Retryable(value = ObjectOptimisticLockingFailureException.class, maxAttempts = MAX_ATTEMPTS,
-			backoff = @Backoff(delay = 50, random = true))
+	@Transactional
 	public void reserve(Long productId, int quantity) {
-		stockPersistenceService.reserve(productId, quantity);
+		Stock stock = findStock(productId);
+		stock.reserve(quantity);
 	}
 
-	@Retryable(value = ObjectOptimisticLockingFailureException.class, maxAttempts = MAX_ATTEMPTS,
-			backoff = @Backoff(delay = 50, random = true))
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void confirmForOrder(Long orderId) {
-		stockPersistenceService.confirmForOrder(orderId);
+		OrderItem item = findOrder(orderId);
+		findStock(item.getProductId()).confirm(item.getQuantity());
 	}
 
-	@Retryable(value = ObjectOptimisticLockingFailureException.class, maxAttempts = MAX_ATTEMPTS,
-			backoff = @Backoff(delay = 50, random = true))
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void releaseForOrder(Long orderId) {
-		stockPersistenceService.releaseForOrder(orderId);
+		OrderItem item = findOrder(orderId);
+		findStock(item.getProductId()).release(item.getQuantity());
+	}
+
+	private OrderItem findOrder(Long orderId) {
+		return orderItemRepository.findByOrderId(orderId)
+				.orElseThrow(() -> new CustomException(OrderErrorCode.EMPTY_ORDER_ITEMS));
+	}
+
+	private Stock findStock(Long productId) {
+		return stockRepository.findByProductIdWithLock(productId)
+				.orElseThrow(() -> new CustomException(ProductErrorCode.PRODUCT_NOT_FOUND));
 	}
 
 }

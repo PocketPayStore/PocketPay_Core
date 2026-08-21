@@ -6,7 +6,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -39,10 +38,6 @@ public class Stock extends BaseEntity {
 
 	@Column(name = "sold_quantity", nullable = false)
 	private int soldQuantity;
-
-	@Version
-	@Column(nullable = false)
-	private Long version;
 
 	public int availableQuantity() {
 		return totalQuantity - reservedQuantity - soldQuantity;
