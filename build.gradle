@@ -31,6 +31,7 @@ dependencies {
 
     // ── Cache / Redis ─────────────────────────────────────────────────────────
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.apache.commons:commons-pool2'
 
     // ── 분산락 ─────
     implementation 'org.redisson:redisson-spring-boot-starter:4.3.0'
