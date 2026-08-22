@@ -21,16 +21,20 @@ idempotency:
   lock-wait-timeout-millis: 5000
   lock-poll-interval-millis: 50
 
+lock:
+  default-wait-time-seconds: 5
+  default-lease-time-seconds: 3
+
 payment:
   point-earn-rate: 0.01
 
 pg:
-  provider-name: mock-pg
+  provider-name: test
   webhook:
-    secret: test-webhook-secret
+    secret: test
 
 mock-pg:
-  base-url: http://localhost:19999
+  base-url: test
 
 settlement:
   pg-fee-rate: 0.029
