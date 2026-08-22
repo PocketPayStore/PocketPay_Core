@@ -7,3 +7,9 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true
+
+# DistributedLockAop 기본값(요소 3a — @DistributedLock에서 개별 지정 안 하면 이 값을 쓴다).
+# wait-time은 반드시 lease-time보다 커야 한다(AopForTransaction.validateDefaults()가 부팅 시 검증).
+lock:
+  default-wait-time-seconds: 5
+  default-lease-time-seconds: 3
