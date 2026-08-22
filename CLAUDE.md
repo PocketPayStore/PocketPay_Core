@@ -12,14 +12,16 @@
 |---|---|---|---|
 | 1 | 결제 코어 정합성 | **안정성**, Before/After 없음 | 결제 승인이라는 하나의 프로세스가 시간축을 따라 올바르게 완결되는가 (Saga, 멱등성, 상태 머신) |
 | 2 | 비동기 처리 | **성능**, Before/After | 요소 1의 결과를 다른 시스템에 전파하는 속도 (동기→RabbitMQ+Outbox) |
-| 3a | 재고 차감 동시성 | **성능**, Before/After | 비관적 락 단독(처음부터) → 비관적 락+Redisson 분산락, DB 커넥션 풀 점유·TPS·p95 비교 |
+| 3a | 재고 차감 동시성 | **성능**, Before/After | 비관적 락 단독(처음부터) → Redisson 분산락 단독(FOR UPDATE 제거), DB 커넥션 풀 점유·TPS·p95 비교 |
 | 3c | 재고 선점-만료 경합 | **안정성**, Before/After 없음 | 처음부터 `orders` 단일 테이블 락으로 만료 배치 vs 결제 승인 경쟁 처리 |
 | 4 | 서킷브레이커 | **안정성**, Before/After 없음 (Retry는 이미 있음, CircuitBreaker/TimeLimiter만 추가) | 장애 격리, PG 에러 분류 |
 | 5 | 정산 배치 + 대사 | **안정성**, Before/After 없음 | PG 정산파일과 내부 데이터 사후 대조 |
 
 **요소 3은 하위 항목(3a/3c)이 서로 다른 성격을 갖는다.** 3a(재고)는 실측 비교 실험이고, 3c(선점-만료)는 "왜 이 설계가 맞는지"를 증명하는 정합성 테스트다. 이 둘을 뭉뚱그려서 "동시성 제어" 하나로 설명하지 말고, 항상 어느 하위 항목을 얘기하는지 구분해서 코드/문서를 짤 것. 요소 4는 캐싱을 검토했으나 이 프로젝트 구조상 캐싱 대상(자주 안 바뀌면서 반복 조회되고 DB 부하가 유의미한 데이터)이 마땅치 않아 제외했고, 서킷브레이커 단일 항목으로 구성한다.
 
-**요소 3a의 Before/After 축은 "비관적 락 단독 → 비관적 락+Redisson 분산락"이다.** 재고는 한정판 핫 아이템 특성상 동일 상품에 동시 주문이 몰려 충돌이 잦다. 그래서 낙관적 락 재시도가 아니라 처음부터 `SELECT ... FOR UPDATE` 비관적 락으로 즉시 직렬화하는 걸 **Before**로 잡는다(이건 3c·환불 처리와 같은 이유로 자연스러운 선택). 문제는 이 방식이 대기하는 동안 **DB 커넥션 풀(HikariCP)의 커넥션을 계속 붙들고 있다는 것** — 충돌이 심해지면 대기 트랜잭션들이 커넥션 풀을 소진시켜, 그 상품과 무관한 다른 요청까지 커넥션을 못 받아 지연되는 문제로 번진다(요소 4의 톰캣 스레드풀 고갈과 같은 메커니즘인데, 병목이 DB 커넥션 풀이라는 점이 다르다). **After**는 Redisson 분산락으로 같은 상품 키(`lock:stock:{productId}`)에 대한 대기를 Redis 쪽으로 옮기는 것이다 — 락을 못 얻은 요청은 DB 트랜잭션을 아예 열지 않고 Redis에서만 대기하므로(`RLock`은 pub/sub 기반이라 폴링이 아니라 락 해제 이벤트로 깨어남) DB 커넥션을 점유하지 않는다. 락을 얻은 요청만 짧게 DB 트랜잭션을 열어 `SELECT ... FOR UPDATE`(방어적으로 유지)로 실제 갱신하고 바로 커밋한다. 정상 트래픽(충돌 거의 없음)에서는 Redis 왕복이라는 추가 홉이 오히려 오버헤드가 될 수 있다는 트레이드오프도 반드시 같이 측정·서술한다.
+**요소 3a의 Before/After 축은 "비관적 락 단독 → Redisson 분산락 단독"이다.** 재고는 한정판 핫 아이템 특성상 동일 상품에 동시 주문이 몰려 충돌이 잦다. 그래서 낙관적 락 재시도가 아니라 처음부터 `SELECT ... FOR UPDATE` 비관적 락으로 즉시 직렬화하는 걸 **Before**로 잡는다(이건 3c·환불 처리와 같은 이유로 자연스러운 선택). 문제는 이 방식이 대기하는 동안 **DB 커넥션 풀(HikariCP)의 커넥션을 계속 붙들고 있다는 것** — 충돌이 심해지면 대기 트랜잭션들이 커넥션 풀을 소진시켜, 그 상품과 무관한 다른 요청까지 커넥션을 못 받아 지연되는 문제로 번진다(요소 4의 톰캣 스레드풀 고갈과 같은 메커니즘인데, 병목이 DB 커넥션 풀이라는 점이 다르다). **After**는 Redisson 분산락으로 같은 상품 키(`lock:stock:{productId}`)에 대한 대기를 Redis 쪽으로 옮기고, `SELECT ... FOR UPDATE`는 아예 걷어낸다 — 락을 못 얻은 요청은 DB 트랜잭션을 열지 않고 Redis에서만 대기하므로(`RLock`은 pub/sub 기반이라 폴링이 아니라 락 해제 이벤트로 깨어남) DB 커넥션을 점유하지 않고, 락을 얻은 요청만 짧게 DB 트랜잭션을 열어 곧장 갱신 후 커밋한다. FOR UPDATE를 같이 유지하는 안도 검토했으나, 재고를 건드리는 경로가 예약/확정/원복 셋으로 나뉘어 있어 그중 하나라도 Redisson 락 밖에 있으면 FOR UPDATE만으로는 못 막는 비대칭 lost-update가 생길 수 있는 반면, 셋 다 Redisson 락으로 감싸면 FOR UPDATE는 항상 비경합으로 즉시 풀리는 순수 오버헤드만 남는다 — 그래서 After는 Redisson 락 하나로 대체하고 FOR UPDATE는 제거하는 쪽을 택했다. 정상 트래픽(충돌 거의 없음)에서는 Redis 왕복이라는 추가 홉이 오히려 오버헤드가 될 수 있다는 트레이드오프도 반드시 같이 측정·서술한다.
+
+이 `lock:stock:{productId}` 락은 재고를 예약하는 주문 생성(`reserve`)만이 아니라, 결제 승인 성공 시 reserved→sold로 확정하는 지점(`confirmForOrder`, 결제 사가 안에서 호출)과 결제 실패·만료로 reserved를 원복하는 지점(`releaseForOrder`, 보상 트랜잭션/만료 배치에서 호출)에도 동일하게 건다. 셋 다 결국 같은 `stock` 행을 읽고 쓰는데, Redisson 락은 애노테이션이 붙은 호출 지점 단위로만 걸리므로 한 경로라도 이 락 밖에 두면 그 경로가 그대로 동시성 구멍이 된다. **알려진 잔여 리스크**: `DistributedLockAop`는 `tryLock(waitTime, leaseTime, ...)`에 명시적 `leaseTime`을 넘겨 호출하므로 Redisson의 워치독(락 보유 스레드가 살아있는 동안 자동 갱신)이 붙지 않는다 — 임계구역 처리가 `lock.default-lease-time-seconds`(기본 3초)를 넘기면 락이 자동 해제되어 두 요청이 동시에 들어올 수 있고, FOR UPDATE 없이는 이 경우를 막을 방법이 없다. 지금은 임계구역이 단순 CRUD라 3초를 넘길 일이 거의 없다고 보고 감수하는 트레이드오프이며, 걱정되면 `leaseTime`을 넉넉히 늘리거나 워치독을 쓰도록 `DistributedLockAop`를 바꾸는 걸 후속 과제로 남긴다.
 
 ---
 
@@ -82,7 +84,7 @@ public interface PgClient {
 
 ### DB 접근 전략
 
-- 쓰기 경로(주문/결제/재고/포인트 — 락·Saga·Outbox 관여): **Spring Data JPA**. `stock` 행(재고 차감, 요소 3a), `payment` 행(환불 처리, 도메인 규칙 11), `orders` 행(만료-승인 경합, 요소 3c) 모두 비관적 락(`SELECT ... FOR UPDATE`)을 처음부터 쓴다. `stock`(요소 3a)은 여기에 더해 Redisson 분산락을 앞단에 둔 버전을 성능 실험 After로 비교한다.
+- 쓰기 경로(주문/결제/재고/포인트 — 락·Saga·Outbox 관여): **Spring Data JPA**. `payment` 행(환불 처리, 도메인 규칙 11), `orders` 행(만료-승인 경합, 요소 3c)은 비관적 락(`SELECT ... FOR UPDATE`)을 처음부터 쓴다. `stock` 행(재고 차감, 요소 3a)은 Before(비관적 락 단독)에서 출발해 After에서는 FOR UPDATE를 걷어내고 Redisson 분산락(`lock:stock:{productId}`) 하나로 대체한다 — 재고 예약(주문 생성)·확정(결제 승인 성공)·원복(보상/만료)까지, `stock` 행을 건드리는 모든 지점이 이 락 하나만 거친다.
 - 조회·집계 경로: **QueryDSL** (별도 의존성 추가 필요, 현재 build.gradle엔 없음 — 조회 로직 붙일 때 추가할 것).
 - MyBatis는 쓰지 않는다.
 
@@ -100,7 +102,7 @@ public interface PgClient {
 8. **멱등키 응답은 TTL을 가진 캐시로 다룬다.** `Idempotency-Key`로 성공 응답을 만들면 Redis에 `{idempotencyKey → 응답}`을 TTL과 함께 저장하고, TTL 내 동일 키 재요청은 이 캐시된 응답을 그대로 반환한다. **TTL이 지난 뒤 동일 키가 다시 오면 성공 응답을 다시 주는 게 아니라 명시적인 "중복 승인 오류"로 처리한다.** (결제 승인 API(`/api/payments`)엔 구현됨 — `IdempotencyKeyGuard.executeIdempotent`가 락을 못 잡으면 즉시 거절하는 대신 처리 중인 요청이 끝날 때까지 대기했다가 캐시된 응답을 반환한다. 주문 생성/환불 요청 API는 처리 자체가 빠르고 재요청 시 같은 응답을 그대로 받아야 할 절박함이 적어서, 3번 규칙의 fail-fast SETNX(`tryAcquire`)만 쓴다.)
 9. **여러 테이블에 동시에 비관적 락을 걸지 않는다.** 요소 3c(재고 선점-만료 경합)에서 만료 대상 거래(`orders`)에만 비관적 락을 걸고, 재고 등 유관 도메인 상태 변경은 별도 트랜잭션/이벤트로 비동기 처리하는 이유가 이거다 — 여러 테이블을 동시에 비관적 락으로 잡으면 데드락이 생길 수 있다.
 10. **비동기 이벤트(요소 2 RabbitMQ 도입 이후)는 무조건 적용하지 않는다.** 컨슈머는 이벤트를 처리하기 전에 "지금 이걸 적용해도 되는 상태인가"를 먼저 검증한다. 순서가 안 맞으면(예: 결제완료보다 환불완료 이벤트가 먼저 소비되는 경우) 명시적으로 실패시켜 재처리 큐로 돌린다.
-11. **환불 처리는 `payment` 행에 비관적 락을 걸어 순차 처리한다.** 환불 가능 잔여 금액(`payment.refundable_amount`)은 환불 처리 시 해당 행에 락을 걸고 직접 차감한다 — 환불은 충돌 자체가 드물지만, 실패보다 확실한 순차 처리가 더 중요해서 비관적 락을 선택했다. 재고 차감(요소 3a)도 비관적 락을 쓰지만 락을 거는 이유가 다르다 — 재고는 충돌이 잦아서, 환불은 순차 처리 보장이 중요해서다. 락 대상 테이블도 `stock` 행과 `payment` 행으로 서로 다르다.
+11. **환불 처리는 `payment` 행에 비관적 락을 걸어 순차 처리한다.** 환불 가능 잔여 금액(`payment.refundable_amount`)은 환불 처리 시 해당 행에 락을 걸고 직접 차감한다 — 환불은 충돌 자체가 드물지만, 실패보다 확실한 순차 처리가 더 중요해서 비관적 락을 선택했다. 재고 차감(요소 3a)도 Before 단계에서는 같은 이유로 비관적 락을 쓰지만(재고는 충돌이 잦아서, 환불은 순차 처리 보장이 중요해서) — 재고 쪽만 After에서 Redisson 분산락으로 교체된다는 점이 다르다. 환불은 이 축의 실험 대상이 아니라 계속 `payment` 행 비관적 락을 쓰고, 락 대상 테이블도 `stock` 행과 `payment` 행으로 서로 다르다.
 
 ---
 
@@ -170,7 +172,7 @@ public interface PgClient {
 | updated_at | DATETIME | |
 
 > 가용 재고 = total_quantity − reserved_quantity − sold_quantity. 주문 생성 시 reserved 증가, 결제 확정 시 reserved→sold, 실패/취소/만료 시 reserved 원복.
-> 재고 차감은 비관적 락(`SELECT ... FOR UPDATE`)으로 구현한다(요소 3a의 Before, `@Version` 컬럼은 쓰지 않음). 요소 3a의 실험 축은 "비관적 락 단독 vs 비관적 락+Redisson 분산락"이다.
+> 재고 차감은 비관적 락(`SELECT ... FOR UPDATE`)으로 구현한다(요소 3a의 Before, `@Version` 컬럼은 쓰지 않음). 요소 3a의 실험 축은 "비관적 락 단독 vs Redisson 분산락 단독"이다. After는 FOR UPDATE를 걷어내고 예약(`reserve`)·확정(`confirmForOrder`)·원복(`releaseForOrder`) 세 지점 모두에 같은 `lock:stock:{productId}` Redisson 락만 건다 — 한 지점이라도 빠지면 그 경로는 락 없이 이 행을 건드리게 된다.
 
 ### 주문/결제
 
@@ -387,7 +389,7 @@ vendor 1---N settlement (지급 대상)
 - PG 웹훅 수신도 즉시 200 응답 후 큐 적재로 전환
 - 재측정 후 Before/After 비교
 
-**단계 5 — 요소 3a: 재고 차감 동시성 (성능, Before/After — 축은 "비관적 락 단독 vs +Redisson 분산락")**
+**단계 5 — 요소 3a: 재고 차감 동시성 (성능, Before/After — 축은 "비관적 락 단독 vs Redisson 분산락 단독")**
 ```java
 // Before — 처음부터 이렇게 짠다 (재고 접근은 잦고 충돌도 잦은 자원이라 비관적 락이 자연스러운 시작점)
 @Transactional
@@ -397,12 +399,13 @@ public void deductStock(Long productId, int qty) {
 }
 ```
 ```java
-// After — Redisson 분산락을 앞단에 둬서 "대기"를 DB 밖(Redis)으로 옮긴다
+// After — DB 락(FOR UPDATE)은 걷어내고 Redisson 분산락 하나로 대체한다. "대기"는 전부 Redis 쪽에서
+// 일어나고, 락 안에서는 평범한 SELECT + 갱신만 한다.
 public void deductStock(Long productId, int qty) {
     RLock lock = redissonClient.getLock("lock:stock:" + productId);
     lock.lock(); // 락 대기는 Redis pub/sub, DB 커넥션 점유 없음
     try {
-        stockPersistenceService.deductWithinLock(productId, qty); // 내부에서 짧게 FOR UPDATE(방어적으로 유지) + 커밋
+        stockPersistenceService.deductWithoutLock(productId, qty); // 짧은 트랜잭션, FOR UPDATE 없이 갱신 + 커밋
     } finally {
         lock.unlock();
     }
@@ -410,10 +413,12 @@ public void deductStock(Long productId, int qty) {
 ```
 - 한정판 상품 특성상 동일 상품(핫 아이템)에 동시 주문이 몰려 충돌이 잦다. 낙관적 락 재시도 대신 처음부터 비관적 락(`SELECT ... FOR UPDATE`)으로 같은 상품 행에 대한 요청을 DB 트랜잭션 단에서 직렬화하는 걸 **Before**로 삼는다 — 이건 3c·환불 처리와 같은 이유로 자연스러운 선택.
 - **Before의 한계**: `FOR UPDATE` 대기는 그 시간만큼 DB 커넥션 풀의 커넥션을 붙들고 있다. 충돌이 심한 핫 아이템에 요청이 몰리면 대기 트랜잭션들이 커넥션 풀을 소진시켜, 그 상품과 무관한 다른 요청까지 커넥션을 못 받아 지연되는 문제로 번진다.
-- **After (비관적 락 + Redisson 분산락)**: 같은 상품 키(`lock:stock:{productId}`)에 대한 대기를 Redis 쪽으로 옮긴다. 락을 못 얻은 요청은 DB 트랜잭션을 아예 열지 않으므로 DB 커넥션을 점유하지 않는다. 락을 얻은 요청만 짧게 DB 트랜잭션을 열어 `FOR UPDATE`(방어적으로 유지)로 실제 갱신 후 바로 커밋한다.
+- **After (Redisson 분산락 단독)**: 같은 상품 키(`lock:stock:{productId}`)에 대한 대기를 Redis 쪽으로 옮기고, `FOR UPDATE`는 아예 제거한다. 락을 못 얻은 요청은 DB 트랜잭션을 아예 열지 않으므로 DB 커넥션을 점유하지 않는다. 락을 얻은 요청만 짧게 DB 트랜잭션을 열어 곧장 갱신 후 바로 커밋한다 — FOR UPDATE를 남겨둬도 이 안에서는 항상 비경합으로 즉시 풀리기 때문에(같은 순간엔 이 락을 쥔 스레드가 전역에서 하나뿐이라) 순수 오버헤드만 남고 보호 효과가 없어서 걷어냈다.
+- **적용 범위는 위 예시(`deductStock`)로 대표되는 주문 생성 시점만이 아니다.** 같은 `stock` 행은 결제 승인 성공 시 reserved→sold로 확정하는 지점(`confirmForOrder`)과 결제 실패·만료로 reserved를 원복하는 지점(`releaseForOrder`)에서도 바뀐다 — 이 두 지점도 반드시 같은 `lock:stock:{productId}` 락으로 감싼다. Redisson 락은 애노테이션이 붙은 메서드 단위로만 걸리는 거라, 주문 생성만 락을 걸고 확정/원복을 빼먹으면 그 두 경로가 서로 그리고 주문 생성과 락 없이 경합하게 되어 FOR UPDATE 없이는 바로 lost update로 이어진다.
+- **알려진 잔여 리스크**: `tryLock(waitTime, leaseTime, ...)`처럼 명시적 `leaseTime`을 넘기면 Redisson 워치독(보유 스레드가 살아있는 동안 락을 자동 갱신)이 붙지 않는다. 임계구역이 `leaseTime`을 넘겨 실행되면 락이 자동 해제되어 두 요청이 동시에 들어올 수 있는데, FOR UPDATE 백스톱이 없는 지금은 이 경우를 못 막는다. 임계구역이 단순 CRUD 수준이라 감수하는 트레이드오프이며, 걱정되면 `leaseTime`을 넉넉히 늘리거나 워치독을 쓰도록 바꾸는 걸 고려한다.
 - k6 시나리오 A(정상, 서로 다른 상품)/B(충돌, 동일 한정판 상품 집중) 분리 측정. **핵심 지표는 TPS·p95뿐 아니라 DB 커넥션 풀 대기/타임아웃 발생 여부** — 이게 이 실험의 실제 증거다.
 - **트레이드오프 필수**: 시나리오 A(충돌 거의 없음)에서는 분산락이 Redis 왕복이라는 불필요한 오버헤드가 될 수 있다. 이 경우 분산락 적용 전/후 TPS를 비교해 "충돌이 잦을 걸로 예상되는 핫 아이템에만 조건부로 분산락을 적용한다"는 설계 판단까지 결과로 뒷받침한다.
-- `stock` 행에만 DB 락을 건다(도메인 규칙 9번과 같은 원칙 — 여러 테이블에 동시에 비관적 락을 걸지 않는다). 락 충돌/대기 횟수는 별도 테이블 없이 Micrometer 메트릭으로 관찰.
+- Before는 `stock` 행에만 DB 락을 건다(도메인 규칙 9번과 같은 원칙 — 여러 테이블에 동시에 비관적 락을 걸지 않는다). After는 그 DB 락 자체를 걷어내고 Redisson 락 하나로 대체한다. 락 충돌/대기 횟수는 별도 테이블 없이 Micrometer 메트릭으로 관찰.
 
 **단계 6 — 환불 처리 동시성 (도메인 규칙 11, 처음부터 비관적 락)**
 - `refund_request`, `payment.refundable_amount` 구현
