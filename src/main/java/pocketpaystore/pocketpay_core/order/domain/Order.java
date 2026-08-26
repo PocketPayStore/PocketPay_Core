@@ -61,6 +61,9 @@ public class Order extends BaseEntity {
 	}
 
 	public void markPaymentPending() {
+		if (this.status == OrderStatus.EXPIRED) {
+			throw new CustomException(OrderErrorCode.ORDER_EXPIRED);
+		}
 		if (this.status != OrderStatus.STOCK_RESERVED && this.status != OrderStatus.PAYMENT_PENDING) {
 			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
 		}
