@@ -15,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import feign.FeignException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -22,6 +23,9 @@ class PgClientCircuitBreakerConfigTest extends RedisTestContainer {
 
 	@Autowired
 	private CircuitBreakerRegistry circuitBreakerRegistry;
+
+	@Autowired
+	private MeterRegistry meterRegistry;
 
 	private CircuitBreaker circuitBreaker;
 
@@ -43,6 +47,13 @@ class PgClientCircuitBreakerConfigTest extends RedisTestContainer {
 
 		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
 		assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isZero();
+	}
+
+	@Test
+	void circuitBreakerMetricsAreBound() {
+		assertThat(meterRegistry.find("resilience4j.circuitbreaker.state")
+				.tag("name", "pgClient")
+				.gauges()).isNotEmpty();
 	}
 
 	@Test
