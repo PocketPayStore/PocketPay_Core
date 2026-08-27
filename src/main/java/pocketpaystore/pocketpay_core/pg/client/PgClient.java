@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import pocketpaystore.pocketpay_core.common.config.FeignConfig;
 import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
@@ -19,14 +20,17 @@ import pocketpaystore.pocketpay_core.pg.dto.response.TransactionStatusResponse;
 public interface PgClient {
 
 	@Retry(name = "pgClient")
+	@CircuitBreaker(name = "pgClient")
 	@PostMapping("/mock-pg/approve")
 	ApprovalResponse approve(@RequestHeader("Idempotency-Key") String idempotencyKey, @RequestBody ApprovalRequest request);
 
 	@Retry(name = "pgClient")
+	@CircuitBreaker(name = "pgClient")
 	@PostMapping("/mock-pg/cancel")
 	CancelResponse cancel(@RequestBody CancelRequest request);
 
 	@Retry(name = "pgClient")
+	@CircuitBreaker(name = "pgClient")
 	@GetMapping("/mock-pg/transactions/{txId}")
 	TransactionStatusResponse getTransaction(@PathVariable("txId") String txId);
 
