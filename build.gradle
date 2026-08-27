@@ -54,10 +54,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 
-    // ── 장애 대응 (Retry는 처음부터, CircuitBreaker/TimeLimiter는 요소 4에서) ──────────
+    // ── 장애 대응 ──────────
     implementation 'io.github.resilience4j:resilience4j-spring-boot3'
+    implementation 'io.github.resilience4j:resilience4j-micrometer'
 
-    // ── AOP (common.lock.DistributedLockAop — @Around("@annotation(...)") 포인트컷) ───
+    // ── AOP ───
     implementation 'org.aspectj:aspectjweaver'
 
     // ── Auth (JWT) ────────────────────────────────────────────────────────────
@@ -81,8 +82,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
 
-    // ── Testcontainers (idempotency guard가 Redis SETNX를 쓰는 테스트용) ────────────
-    // 버전은 Spring Boot BOM(spring-boot-dependencies)이 관리해서 명시 안 해도 된다.
+    // ── Testcontainers ────────────
     testImplementation 'org.testcontainers:testcontainers'
 }
 
