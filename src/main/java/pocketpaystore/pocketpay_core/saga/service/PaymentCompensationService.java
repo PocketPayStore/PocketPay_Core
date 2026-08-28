@@ -31,13 +31,13 @@ public class PaymentCompensationService {
 		Long compensationLogId = sagaLogService.start(orderId, SagaStep.PAYMENT);
 		sagaLogService.compensating(compensationLogId);
 		try {
+			stockService.releaseForOrder(orderId);
 			if (pointEarned) {
 				pointService.compensateEarn(memberId, orderId, earnedAmount);
 			}
 			if (pointUsed) {
 				pointService.compensateUse(memberId, orderId, usedPointAmount);
 			}
-			stockService.releaseForOrder(orderId);
 
 			tryCancelPg(paymentId);
 			paymentStateService.cancelWithOrder(paymentId, orderId);
