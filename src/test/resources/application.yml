@@ -39,6 +39,9 @@ mock-pg:
 internal-api:
   key: test-internal-key
 
+payment-events:
+  channel: payment:status-changed:test
+
 settlement:
   pg-fee-rate: 0.029
   platform-fee-rate: 0.05

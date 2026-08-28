@@ -9,13 +9,16 @@ import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.PaymentErrorCode;
+import pocketpaystore.pocketpay_core.order.domain.Order;
 import pocketpaystore.pocketpay_core.order.domain.OrderItem;
 import pocketpaystore.pocketpay_core.order.repository.OrderItemRepository;
+import pocketpaystore.pocketpay_core.order.repository.OrderRepository;
 import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentCancel;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
 import pocketpaystore.pocketpay_core.payment.domain.Refund;
 import pocketpaystore.pocketpay_core.payment.dto.response.PreparedRefund;
+import pocketpaystore.pocketpay_core.payment.event.publisher.PaymentStatusEventPublisher;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentCancelRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
@@ -30,6 +33,8 @@ public class PaymentRefundStateService {
 	private final RefundRepository refundRepository;
 	private final PaymentCancelRepository paymentCancelRepository;
 	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
+	private final OrderRepository orderRepository;
+	private final PaymentStatusEventPublisher statusEventPublisher;
 
 	@Transactional
 	public PreparedRefund prepare(Long orderId, int quantity, String idempotencyKey) {
@@ -59,6 +64,9 @@ public class PaymentRefundStateService {
 
 		refund.toProcessing();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
+		Order order = orderRepository.findById(payment.getOrderId())
+				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
+		statusEventPublisher.publish(payment, order);
 		return PreparedRefund.builder().refund(refund).payment(payment).build();
 	}
 
