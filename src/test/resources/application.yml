@@ -36,9 +36,6 @@ pg:
 mock-pg:
   base-url: test
 
-internal-api:
-  key: test-internal-key
-
 payment-events:
   channel: payment:status-changed:test
 
