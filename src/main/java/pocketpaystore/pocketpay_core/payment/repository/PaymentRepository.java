@@ -10,7 +10,7 @@ import jakarta.persistence.LockModeType;
 import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 
-public interface PaymentRepository extends JpaRepository<Payment, Long> {
+public interface PaymentRepository extends JpaRepository<Payment, Long>, PaymentRepositoryCustom {
 
 	Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
