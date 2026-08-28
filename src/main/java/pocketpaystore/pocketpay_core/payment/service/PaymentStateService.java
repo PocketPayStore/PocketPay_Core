@@ -13,6 +13,8 @@ import pocketpaystore.pocketpay_core.order.repository.OrderRepository;
 import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentMethod;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
+import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
+import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 
 @Service
@@ -20,6 +22,7 @@ import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 public class PaymentStateService {
 
 	private final PaymentRepository paymentRepository;
+	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 	private final OrderRepository orderRepository;
 
 	@Transactional
@@ -33,14 +36,19 @@ public class PaymentStateService {
 
 		Payment payment = Payment.create(
 				orderId, PaymentMethod.CARD, pgProviderName, idempotencyKey, amount, usedPointAmount, paymentKey);
-		payment.toInProgress();
-		return paymentRepository.save(payment).getId();
+		Payment saved = paymentRepository.save(payment);
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(saved.getId(), saved.getStatus()));
+
+		saved.toInProgress();
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(saved.getId(), saved.getStatus()));
+		return saved.getId();
 	}
 
 	@Transactional
 	public Payment markDone(Long paymentId, Long orderId) {
 		Payment payment = findPayment(paymentId);
 		payment.toDone();
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		Order order = findOrder(orderId);
 		order.markPaid();
 		return payment;
@@ -50,6 +58,7 @@ public class PaymentStateService {
 	public Payment markPaymentFailed(Long paymentId, String failureCode, String failureMessage) {
 		Payment payment = findPayment(paymentId);
 		payment.toFailed(failureCode, failureMessage);
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		return payment;
 	}
 
@@ -57,6 +66,7 @@ public class PaymentStateService {
 	public Payment markTimeoutUnknown(Long paymentId) {
 		Payment payment = findPayment(paymentId);
 		payment.toTimeoutUnknown();
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		return payment;
 	}
 
@@ -64,6 +74,7 @@ public class PaymentStateService {
 	public void cancelWithOrder(Long paymentId, Long orderId) {
 		Payment payment = findPayment(paymentId);
 		payment.toCanceled();
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 
 		Order order = findOrder(orderId);
 		order.markCanceled();
