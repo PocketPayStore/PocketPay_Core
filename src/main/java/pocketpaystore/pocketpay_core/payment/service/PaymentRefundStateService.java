@@ -5,7 +5,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
-
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
@@ -14,10 +13,12 @@ import pocketpaystore.pocketpay_core.order.domain.OrderItem;
 import pocketpaystore.pocketpay_core.order.repository.OrderItemRepository;
 import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentCancel;
+import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
 import pocketpaystore.pocketpay_core.payment.domain.Refund;
 import pocketpaystore.pocketpay_core.payment.dto.response.PreparedRefund;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentCancelRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
+import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
 import pocketpaystore.pocketpay_core.payment.repository.RefundRepository;
 
 @Service
@@ -28,6 +29,7 @@ public class PaymentRefundStateService {
 	private final OrderItemRepository orderItemRepository;
 	private final RefundRepository refundRepository;
 	private final PaymentCancelRepository paymentCancelRepository;
+	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 
 	@Transactional
 	public PreparedRefund prepare(Long orderId, int quantity, String idempotencyKey) {
@@ -56,6 +58,7 @@ public class PaymentRefundStateService {
 		}
 
 		refund.toProcessing();
+		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		return PreparedRefund.builder().refund(refund).payment(payment).build();
 	}
 
