@@ -19,6 +19,7 @@ import pocketpaystore.pocketpay_core.member.repository.MemberRepository;
 import pocketpaystore.pocketpay_core.order.domain.OrderStatus;
 import pocketpaystore.pocketpay_core.order.dto.request.CreateOrderRequest;
 import pocketpaystore.pocketpay_core.order.dto.response.OrderResponse;
+import pocketpaystore.pocketpay_core.order.repository.OrderRepository;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
@@ -41,6 +42,9 @@ class OrderServiceTest extends RedisTestContainer {
 
 	@Autowired
 	private StockRepository stockRepository;
+
+	@Autowired
+	private OrderRepository orderRepository;
 
 	@Autowired
 	private VendorRepository vendorRepository;
@@ -77,11 +81,13 @@ class OrderServiceTest extends RedisTestContainer {
 	@DisplayName("가용 재고보다 많은 수량을 주문하면 예외가 발생한다")
 	void createOrder_insufficientStock() {
 		CreateOrderRequest request = new CreateOrderRequest(product.getId(), 11);
+		long countBefore = orderRepository.count();
 
 		Throwable thrown = catchThrowable(
 				() -> orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString()));
 
 		assertThat(thrown).isInstanceOf(CustomException.class);
+		assertThat(orderRepository.count()).isEqualTo(countBefore);
 	}
 
 	@Test
