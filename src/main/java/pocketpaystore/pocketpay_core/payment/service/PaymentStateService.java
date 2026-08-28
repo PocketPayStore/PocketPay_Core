@@ -14,6 +14,7 @@ import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentMethod;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
+import pocketpaystore.pocketpay_core.payment.event.publisher.PaymentStatusEventPublisher;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 
@@ -24,6 +25,7 @@ public class PaymentStateService {
 	private final PaymentRepository paymentRepository;
 	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 	private final OrderRepository orderRepository;
+	private final PaymentStatusEventPublisher statusEventPublisher;
 
 	@Transactional
 	public Long initiate(Long orderId, String idempotencyKey, Long amount, Long usedPointAmount,
@@ -38,9 +40,11 @@ public class PaymentStateService {
 				orderId, PaymentMethod.CARD, pgProviderName, idempotencyKey, amount, usedPointAmount, paymentKey);
 		Payment saved = paymentRepository.save(payment);
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(saved.getId(), saved.getStatus()));
+		statusEventPublisher.publish(saved, order);
 
 		saved.toInProgress();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(saved.getId(), saved.getStatus()));
+		statusEventPublisher.publish(saved, order);
 		return saved.getId();
 	}
 
@@ -51,6 +55,7 @@ public class PaymentStateService {
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		Order order = findOrder(orderId);
 		order.markPaid();
+		statusEventPublisher.publish(payment, order);
 		return payment;
 	}
 
@@ -59,6 +64,8 @@ public class PaymentStateService {
 		Payment payment = findPayment(paymentId);
 		payment.toFailed(failureCode, failureMessage);
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
+		Order order = findOrder(payment.getOrderId());
+		statusEventPublisher.publish(payment, order);
 		return payment;
 	}
 
@@ -67,6 +74,8 @@ public class PaymentStateService {
 		Payment payment = findPayment(paymentId);
 		payment.toTimeoutUnknown();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
+		Order order = findOrder(payment.getOrderId());
+		statusEventPublisher.publish(payment, order);
 		return payment;
 	}
 
@@ -78,6 +87,7 @@ public class PaymentStateService {
 
 		Order order = findOrder(orderId);
 		order.markCanceled();
+		statusEventPublisher.publish(payment, order);
 	}
 
 	private Payment findPayment(Long paymentId) {
