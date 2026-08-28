@@ -36,6 +36,9 @@ pg:
 mock-pg:
   base-url: test
 
+internal-api:
+  key: test-internal-key
+
 settlement:
   pg-fee-rate: 0.029
   platform-fee-rate: 0.05
