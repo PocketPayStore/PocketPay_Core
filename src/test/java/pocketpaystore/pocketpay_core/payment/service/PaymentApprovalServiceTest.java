@@ -44,7 +44,6 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
-import pocketpaystore.pocketpay_core.settlement.repository.SettlementRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
 import pocketpaystore.pocketpay_core.vendor.repository.VendorRepository;
@@ -75,9 +74,6 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 
 	@Autowired
 	private PointBalanceRepository pointBalanceRepository;
-
-	@Autowired
-	private SettlementRepository settlementRepository;
 
 	@Autowired
 	private VendorRepository vendorRepository;
@@ -120,8 +116,6 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		assertThat(stock.getReservedQuantity()).isZero();
 
 		assertThat(pointBalanceRepository.findByMemberId(buyer.getId())).isPresent();
-		assertThat(settlementRepository.findAll()).filteredOn(s -> s.getPaymentId().equals(response.getId())).hasSize(1);
-
 	}
 
 	@Test

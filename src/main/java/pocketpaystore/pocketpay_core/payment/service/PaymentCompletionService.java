@@ -17,7 +17,6 @@ import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentCompletionStep;
 import pocketpaystore.pocketpay_core.point.service.PointService;
 import pocketpaystore.pocketpay_core.product.service.StockService;
-import pocketpaystore.pocketpay_core.settlement.service.SettlementService;
 
 @Slf4j
 @Service
@@ -28,7 +27,6 @@ public class PaymentCompletionService {
 	private final PointService pointService;
 	private final StockService stockService;
 	private final NotificationService notificationService;
-	private final SettlementService settlementService;
 	private final CriticalAlertService criticalAlertService;
 
 	@Value("${payment.point-earn-rate}")
@@ -53,11 +51,6 @@ public class PaymentCompletionService {
 			notificationService.notify(paymentId);
 		} catch (Exception e) {
 			criticalAlertService.alertPaymentPostProcessingFailed(PaymentCompletionStep.NOTIFICATION, orderId, paymentId, e);
-		}
-		try {
-			settlementService.create(paymentId);
-		} catch (Exception e) {
-			criticalAlertService.alertPaymentPostProcessingFailed(PaymentCompletionStep.SETTLEMENT, orderId, paymentId, e);
 		}
 	}
 }
