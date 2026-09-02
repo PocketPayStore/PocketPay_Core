@@ -132,14 +132,12 @@ public class PaymentApprovalService {
 		}
 
 		if (pgAmount == 0) {
-			Payment payment = completePayment(paymentId, order, null, pgAmount);
+			Payment payment = completePayment(paymentId, order);
 			return PaymentResponse.from(payment, orderNumber);
 		}
 
 		try {
-			var approval = pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, pgAmount, order.getOrderNumber()));
-			Payment payment = completePayment(paymentId, order, paymentKey, pgAmount);
-			return PaymentResponse.from(payment, orderNumber);
+			pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, pgAmount, order.getOrderNumber()));
 		} catch (FeignException e) {
 			if (isUserFault(e)) {
 				log.info("[Payment] PG 승인 거절(유저 귀책, 재시도 없이 즉시 실패): orderId={}, status={}", order.getId(), e.status());
@@ -155,16 +153,22 @@ public class PaymentApprovalService {
 			Payment payment = paymentStateService.markTimeoutUnknown(paymentId);
 			return PaymentResponse.from(payment, orderNumber);
 		}
-	}
 
-	private Payment completePayment(Long paymentId, Order order, String paymentKey, long pgAmount) {
 		Payment payment;
 		try {
 			payment = paymentStateService.markDone(paymentId, order.getId());
 		} catch (Exception e) {
-			criticalAlertService.alertPgApprovedButPersistFailed(order.getId(), paymentId, paymentKey, pgAmount, e);
+			criticalAlertService.alertPgApprovedButPersistFailed(
+					order.getId(), paymentId, paymentKey, pgAmount, e);
+			paymentStateService.markTimeoutUnknown(paymentId);
 			throw e;
 		}
+		paymentCompletionService.complete(paymentId, order.getId());
+		return PaymentResponse.from(payment, orderNumber);
+	}
+
+	private Payment completePayment(Long paymentId, Order order) {
+		Payment payment = paymentStateService.markDone(paymentId, order.getId());
 		paymentCompletionService.complete(paymentId, order.getId());
 		return payment;
 	}
