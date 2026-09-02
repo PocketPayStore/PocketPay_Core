@@ -33,11 +33,15 @@ public class PointBalance extends BaseEntity {
 	@Column(nullable = false)
 	private Long balance;
 
+	@Column(name = "reserved_amount", nullable = false)
+	private Long reservedAmount;
+
 	public static PointBalance create(Long memberId) {
 		return PointBalance.builder()
-				.memberId(memberId)
-				.balance(0L)
-				.build();
+					.memberId(memberId)
+					.balance(0L)
+					.reservedAmount(0L)
+					.build();
 	}
 
 	public Long adjust(Long amount) {
@@ -51,6 +55,33 @@ public class PointBalance extends BaseEntity {
 		}
 		this.balance -= amount;
 		return this.balance;
+	}
+
+	public void reserve(Long amount) {
+		if (amount <= 0 || availableBalance() < amount) {
+			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
+		}
+		this.reservedAmount += amount;
+	}
+
+	public Long confirmReservation(Long amount) {
+		if (amount <= 0 || this.reservedAmount < amount || this.balance < amount) {
+			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
+		}
+		this.reservedAmount -= amount;
+		this.balance -= amount;
+		return this.balance;
+	}
+
+	public void releaseReservation(Long amount) {
+		if (amount <= 0 || this.reservedAmount < amount) {
+			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
+		}
+		this.reservedAmount -= amount;
+	}
+
+	public Long availableBalance() {
+		return this.balance - this.reservedAmount;
 	}
 
 }

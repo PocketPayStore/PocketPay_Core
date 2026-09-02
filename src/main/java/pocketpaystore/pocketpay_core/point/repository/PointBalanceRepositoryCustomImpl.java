@@ -16,7 +16,7 @@ public class PointBalanceRepositoryCustomImpl implements PointBalanceRepositoryC
 	@Override
 	public Optional<Long> findBalanceByMemberId(Long memberId) {
 		Long balance = queryFactory
-				.select(pointBalance.balance)
+				.select(pointBalance.balance.subtract(pointBalance.reservedAmount))
 				.from(pointBalance)
 				.where(pointBalance.memberId.eq(memberId))
 				.fetchOne();
