@@ -44,10 +44,6 @@ import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
 import pocketpaystore.pocketpay_core.product.repository.StockRepository;
-import pocketpaystore.pocketpay_core.saga.domain.SagaLog;
-import pocketpaystore.pocketpay_core.saga.domain.SagaStatus;
-import pocketpaystore.pocketpay_core.saga.domain.SagaStep;
-import pocketpaystore.pocketpay_core.saga.repository.SagaLogRepository;
 import pocketpaystore.pocketpay_core.settlement.repository.SettlementRepository;
 import pocketpaystore.pocketpay_core.support.RedisTestContainer;
 import pocketpaystore.pocketpay_core.vendor.domain.Vendor;
@@ -79,9 +75,6 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 
 	@Autowired
 	private PointBalanceRepository pointBalanceRepository;
-
-	@Autowired
-	private SagaLogRepository sagaLogRepository;
 
 	@Autowired
 	private SettlementRepository settlementRepository;
@@ -129,11 +122,6 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		assertThat(pointBalanceRepository.findByMemberId(buyer.getId())).isPresent();
 		assertThat(settlementRepository.findAll()).filteredOn(s -> s.getPaymentId().equals(response.getId())).hasSize(1);
 
-		List<SagaLog> logs = sagaLogRepository.findByOrderId(orderId);
-		assertThat(logs).filteredOn(l -> l.getStep() == SagaStep.POINT_EARN).extracting(SagaLog::getStatus)
-				.containsExactly(SagaStatus.SUCCESS);
-		assertThat(logs).filteredOn(l -> l.getStep() == SagaStep.STOCK_CONFIRM).extracting(SagaLog::getStatus)
-				.containsExactly(SagaStatus.SUCCESS);
 	}
 
 	@Test

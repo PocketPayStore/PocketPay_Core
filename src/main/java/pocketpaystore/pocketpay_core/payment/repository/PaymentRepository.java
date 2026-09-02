@@ -1,5 +1,6 @@
 package pocketpaystore.pocketpay_core.payment.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +16,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
 	boolean existsByOrderIdAndStatus(Long orderId, PaymentStatus status);
+
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT p FROM Payment p WHERE p.orderId = :orderId AND p.status IN ('DONE', 'PARTIAL_CANCELED', 'CANCELED')")

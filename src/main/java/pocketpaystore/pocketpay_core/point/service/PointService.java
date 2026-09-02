@@ -30,30 +30,12 @@ public class PointService {
 	}
 
 	@Transactional
-	public void compensateEarn(Long memberId, Long orderId, Long amount) {
-		PointBalance balance = pointBalanceRepository.findByMemberIdWithLock(memberId)
-				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_BALANCE_NOT_FOUND));
-		Long balanceAfter = balance.adjust(-amount);
-		pointLedgerRepository.save(
-				PointLedger.create(memberId, orderId, PointLedgerType.CANCEL_RESTORE, -amount, balanceAfter));
-	}
-
-	@Transactional
 	public void use(Long memberId, Long orderId, Long amount) {
 		PointBalance balance = pointBalanceRepository.findByMemberIdWithLock(memberId)
 				.orElseThrow(() -> new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE));
 		Long balanceAfter = balance.use(amount);
 		PointLedger pointLedger = PointLedger.create(memberId, orderId, PointLedgerType.USE, -amount, balanceAfter);
 		pointLedgerRepository.save(pointLedger);
-	}
-
-	@Transactional
-	public void compensateUse(Long memberId, Long orderId, Long amount) {
-		PointBalance balance = pointBalanceRepository.findByMemberIdWithLock(memberId)
-				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_BALANCE_NOT_FOUND));
-		Long balanceAfter = balance.adjust(amount);
-		pointLedgerRepository.save(
-				PointLedger.create(memberId, orderId, PointLedgerType.CANCEL_RESTORE, amount, balanceAfter));
 	}
 
 }

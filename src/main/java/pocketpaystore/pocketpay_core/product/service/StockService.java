@@ -29,11 +29,6 @@ public class StockService {
 		stockLockingService.confirm(item.getProductId(), item.getQuantity());
 	}
 
-	public void releaseForOrder(Long orderId) {
-		OrderItem item = findOrder(orderId);
-		stockLockingService.release(item.getProductId(), item.getQuantity());
-	}
-
 	private OrderItem findOrder(Long orderId) {
 		return orderItemRepository.findByOrderId(orderId)
 				.orElseThrow(() -> new CustomException(OrderErrorCode.EMPTY_ORDER_ITEMS));
