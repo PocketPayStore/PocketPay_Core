@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +20,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import feign.FeignException;
+import pocketpaystore.pocketpay_core.common.alert.CriticalAlertService;
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.PaymentErrorCode;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.PointErrorCode;
@@ -38,9 +41,10 @@ import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
-import pocketpaystore.pocketpay_core.pg.dto.response.CancelResponse;
 import pocketpaystore.pocketpay_core.point.domain.PointBalance;
+import pocketpaystore.pocketpay_core.point.domain.PointReservationStatus;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
+import pocketpaystore.pocketpay_core.point.repository.PointReservationRepository;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
@@ -78,6 +82,9 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 	private PointBalanceRepository pointBalanceRepository;
 
 	@Autowired
+	private PointReservationRepository pointReservationRepository;
+
+	@Autowired
 	private VendorRepository vendorRepository;
 
 	@MockitoBean
@@ -85,6 +92,9 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 
 	@MockitoBean
 	private StockService stockService;
+
+	@MockitoBean
+	private CriticalAlertService criticalAlertService;
 
 	private Member buyer;
 	private Long productId;
@@ -122,6 +132,9 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 
 		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
 		assertThat(balance.getBalance()).isEqualTo(70L);
+		assertThat(balance.getReservedAmount()).isZero();
+		assertThat(pointReservationRepository.findByPaymentId(response.getId()).orElseThrow().getStatus())
+				.isEqualTo(PointReservationStatus.USED);
 
 		Order orderEntity = orderRepository.findByOrderNumber(order.getOrderNumber()).orElseThrow();
 		assertThat(orderEntity.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -146,6 +159,45 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 
 		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
 		assertThat(balance.getBalance()).isEqualTo(0L);
+	}
+
+	@Test
+	@DisplayName("PG가 명확히 거절하면 예약한 포인트를 즉시 해제한다")
+	void usePoints_pgRejected_releasesReservation() {
+		givenPointBalance(3_000L);
+		OrderResponse order = createOrder(1);
+		FeignException badRequest = mock(FeignException.class);
+		when(badRequest.status()).thenReturn(400);
+		when(pgClient.approve(any(), any())).thenThrow(badRequest);
+
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(),
+				new ApprovePaymentRequest("PG-KEY-REJECT", 3_000L, 7_000L));
+
+		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
+		assertThat(balance.getBalance()).isEqualTo(3_000L);
+		assertThat(balance.getReservedAmount()).isZero();
+		assertThat(pointReservationRepository.findByPaymentId(response.getId()).orElseThrow().getStatus())
+				.isEqualTo(PointReservationStatus.RELEASED);
+	}
+
+	@Test
+	@DisplayName("PG 결과가 불명확하면 대사가 끝날 때까지 포인트 예약을 유지한다")
+	void usePoints_pgTimeout_keepsReservation() {
+		givenPointBalance(3_000L);
+		OrderResponse order = createOrder(1);
+		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(),
+				new ApprovePaymentRequest("PG-KEY-TIMEOUT", 3_000L, 7_000L));
+
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
+		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
+		assertThat(balance.getBalance()).isEqualTo(3_000L);
+		assertThat(balance.getReservedAmount()).isEqualTo(3_000L);
+		assertThat(pointReservationRepository.findByPaymentId(response.getId()).orElseThrow().getStatus())
+				.isEqualTo(PointReservationStatus.RESERVED);
 	}
 
 	@Test
@@ -179,14 +231,13 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 	}
 
 	@Test
-	@DisplayName("포인트 사용 후 재고 확정이 실패하면 보상 트랜잭션이 사용한 포인트를 되돌린다")
-	void usePoints_compensatedWhenLaterStepFails() {
+	@DisplayName("재고 확정이 실패해도 승인된 결제와 포인트 처리를 유지하고 중요 알림을 남긴다")
+	void usePoints_stockConfirmationFails_keepsDoneAndAlerts() {
 		givenPointBalance(3_000L);
 		OrderResponse order = createOrder(1);
 
 		when(pgClient.approve(any(), any()))
 				.thenReturn(new ApprovalResponse("PG-TX-COMPENSATE", "0000", "OK", LocalDateTime.now()));
-		when(pgClient.cancel(any())).thenReturn(new CancelResponse("PG-TX-COMPENSATE", "0000", LocalDateTime.now()));
 		doThrow(new RuntimeException("재고 확정 실패")).when(stockService).confirmForOrder(any());
 
 		PaymentResponse response = paymentApprovalService.approve(
@@ -195,10 +246,11 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		assertThat(response).isNotNull();
 
 		Payment payment = paymentRepository.findById(response.getId()).orElseThrow();
-		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELED);
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.DONE);
 
 		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
-		assertThat(balance.getBalance()).isEqualTo(3_000L);
+		assertThat(balance.getBalance()).isEqualTo(70L);
+		verify(criticalAlertService).alertStockConfirmationFailed(any(), any(), any());
 	}
 
 	private void givenPointBalance(Long amount) {

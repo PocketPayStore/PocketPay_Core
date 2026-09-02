@@ -40,13 +40,6 @@ public class PaymentCompletionService {
 		Order order = orderRepository.findById(orderId)
 				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
 		try {
-			if (payment.getUsedPointAmount() > 0) {
-				pointService.use(order.getMemberId(), orderId, payment.getUsedPointAmount());
-			}
-		} catch (Exception e) {
-			criticalAlertService.alertPaymentPostProcessingFailed(PaymentCompletionStep.POINT_USE, orderId, paymentId, e);
-		}
-		try {
 			pointService.earn(order.getMemberId(), orderId, Math.round(payment.getAmount() * pointEarnRate));
 		} catch (Exception e) {
 			criticalAlertService.alertPaymentPostProcessingFailed(PaymentCompletionStep.POINT_EARN, orderId, paymentId, e);

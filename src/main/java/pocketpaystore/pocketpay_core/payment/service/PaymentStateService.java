@@ -17,6 +17,7 @@ import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
 import pocketpaystore.pocketpay_core.payment.event.publisher.PaymentStatusEventPublisher;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
+import pocketpaystore.pocketpay_core.point.service.PointReservationService;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +27,7 @@ public class PaymentStateService {
 	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 	private final OrderRepository orderRepository;
 	private final PaymentStatusEventPublisher statusEventPublisher;
+	private final PointReservationService pointReservationService;
 
 	@Transactional
 	public Long initiate(Long orderId, String idempotencyKey, Long amount, Long usedPointAmount,
@@ -39,6 +41,7 @@ public class PaymentStateService {
 		Payment payment = Payment.create(
 				orderId, PaymentMethod.CARD, pgProviderName, idempotencyKey, amount, usedPointAmount, paymentKey);
 		Payment saved = paymentRepository.save(payment);
+		pointReservationService.reserve(saved.getId(), order.getMemberId(), usedPointAmount);
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(saved.getId(), saved.getStatus()));
 		statusEventPublisher.publish(saved, order);
 
@@ -51,6 +54,9 @@ public class PaymentStateService {
 	@Transactional
 	public Payment markDone(Long paymentId, Long orderId) {
 		Payment payment = findPayment(paymentId);
+		if (payment.getUsedPointAmount() > 0) {
+			pointReservationService.confirm(paymentId, orderId);
+		}
 		payment.toDone();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		Order order = findOrder(orderId);
@@ -62,6 +68,9 @@ public class PaymentStateService {
 	@Transactional
 	public Payment markPaymentFailed(Long paymentId, String failureCode, String failureMessage) {
 		Payment payment = findPayment(paymentId);
+		if (payment.getUsedPointAmount() > 0) {
+			pointReservationService.release(paymentId);
+		}
 		payment.toFailed(failureCode, failureMessage);
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		Order order = findOrder(payment.getOrderId());
