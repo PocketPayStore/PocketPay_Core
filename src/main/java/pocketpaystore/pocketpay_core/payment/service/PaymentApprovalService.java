@@ -3,7 +3,6 @@ package pocketpaystore.pocketpay_core.payment.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import feign.FeignException;
 
@@ -24,11 +23,9 @@ import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
-import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
-import pocketpaystore.pocketpay_core.saga.service.PaymentSagaOrchestrator;
 
 @Slf4j
 @Service
@@ -38,11 +35,10 @@ public class PaymentApprovalService {
 	private static final String IDEMPOTENCY_NAMESPACE = "payment";
 
 	private final OrderRepository orderRepository;
-	private final PaymentRepository paymentRepository;
 	private final PaymentStateService paymentStateService;
 	private final PgClient pgClient;
 	private final IdempotencyKeyGuard idempotencyKeyGuard;
-	private final PaymentSagaOrchestrator sagaOrchestrator;
+	private final PaymentCompletionService paymentCompletionService;
 	private final CriticalAlertService criticalAlertService;
 	private final PointBalanceRepository pointBalanceRepository;
 	private final ObjectMapper objectMapper;
@@ -136,12 +132,14 @@ public class PaymentApprovalService {
 		}
 
 		if (pgAmount == 0) {
-			Payment payment = markDoneAndRunPostApprovalSteps(paymentId, order, null, pgAmount);
+			Payment payment = completePayment(paymentId, order, null, pgAmount);
 			return PaymentResponse.from(payment, orderNumber);
 		}
 
 		try {
-			pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, pgAmount, order.getOrderNumber()));
+			var approval = pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, pgAmount, order.getOrderNumber()));
+			Payment payment = completePayment(paymentId, order, paymentKey, pgAmount);
+			return PaymentResponse.from(payment, orderNumber);
 		} catch (FeignException e) {
 			if (isUserFault(e)) {
 				log.info("[Payment] PG 승인 거절(유저 귀책, 재시도 없이 즉시 실패): orderId={}, status={}", order.getId(), e.status());
@@ -157,12 +155,9 @@ public class PaymentApprovalService {
 			Payment payment = paymentStateService.markTimeoutUnknown(paymentId);
 			return PaymentResponse.from(payment, orderNumber);
 		}
-
-		Payment payment = markDoneAndRunPostApprovalSteps(paymentId, order, paymentKey, pgAmount);
-		return PaymentResponse.from(payment, orderNumber);
 	}
 
-	private Payment markDoneAndRunPostApprovalSteps(Long paymentId, Order order, String paymentKey, long pgAmount) {
+	private Payment completePayment(Long paymentId, Order order, String paymentKey, long pgAmount) {
 		Payment payment;
 		try {
 			payment = paymentStateService.markDone(paymentId, order.getId());
@@ -170,7 +165,7 @@ public class PaymentApprovalService {
 			criticalAlertService.alertPgApprovedButPersistFailed(order.getId(), paymentId, paymentKey, pgAmount, e);
 			throw e;
 		}
-		sagaOrchestrator.runSagaAfterApproval(paymentId, order.getId());
+		paymentCompletionService.complete(paymentId, order.getId());
 		return payment;
 	}
 
@@ -185,15 +180,6 @@ public class PaymentApprovalService {
 		if (balance < usePointAmount) {
 			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
 		}
-	}
-
-	@Transactional(readOnly = true)
-	public PaymentResponse getPayment(Long paymentId) {
-		Payment payment = paymentRepository.findById(paymentId)
-				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
-		Order order = orderRepository.findById(payment.getOrderId())
-				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
-		return PaymentResponse.from(payment, order.getOrderNumber());
 	}
 
 	private boolean isUserFault(FeignException e) {
