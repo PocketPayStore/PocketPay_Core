@@ -79,17 +79,6 @@ public class PaymentStateService {
 		return payment;
 	}
 
-	@Transactional
-	public void cancelWithOrder(Long paymentId, Long orderId) {
-		Payment payment = findPayment(paymentId);
-		payment.toCanceled();
-		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
-
-		Order order = findOrder(orderId);
-		order.markCanceled();
-		statusEventPublisher.publish(payment, order);
-	}
-
 	private Payment findPayment(Long paymentId) {
 		return paymentRepository.findById(paymentId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
