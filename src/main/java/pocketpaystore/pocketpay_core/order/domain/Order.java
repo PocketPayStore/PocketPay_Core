@@ -75,20 +75,6 @@ public class Order extends BaseEntity {
 		this.status = OrderStatus.PAID;
 	}
 
-	public void markFailed() {
-		if (this.status != OrderStatus.CREATED
-				&& this.status != OrderStatus.STOCK_RESERVED
-				&& this.status != OrderStatus.PAYMENT_PENDING) {
-			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
-		}
-		this.status = OrderStatus.FAILED;
-	}
-
-	public void markCanceled() {
-		validateTransition(OrderStatus.PAID);
-		this.status = OrderStatus.CANCELED;
-	}
-
 	private void validateTransition(OrderStatus expected) {
 		if (this.status != expected) {
 			throw new CustomException(OrderErrorCode.INVALID_ORDER_STATE);
