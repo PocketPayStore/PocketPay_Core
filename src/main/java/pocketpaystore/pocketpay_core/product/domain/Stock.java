@@ -54,7 +54,7 @@ public class Stock extends BaseEntity {
 	}
 
 	public void confirm(int quantity) {
-		if (this.reservedQuantity != quantity) {
+		if (this.reservedQuantity < quantity) {
 			throw new CustomException(ProductErrorCode.INSUFFICIENT_RESERVED_QUANTITY);
 		}
 		this.reservedQuantity -= quantity;
@@ -62,7 +62,7 @@ public class Stock extends BaseEntity {
 	}
 
 	public void release(int quantity) {
-		if (this.reservedQuantity != quantity) {
+		if (this.reservedQuantity < quantity) {
 			throw new CustomException(ProductErrorCode.INSUFFICIENT_RESERVED_QUANTITY);
 		}
 		this.reservedQuantity -= quantity;
