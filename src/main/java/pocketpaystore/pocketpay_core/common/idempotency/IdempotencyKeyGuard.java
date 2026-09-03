@@ -2,15 +2,17 @@ package pocketpaystore.pocketpay_core.common.idempotency;
 
 import java.time.Duration;
 
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
 
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
 
 @Component
+@RequiredArgsConstructor
 public class IdempotencyKeyGuard {
 
 	private static final String KEY_PREFIX = "idempotency:";
@@ -31,11 +33,6 @@ public class IdempotencyKeyGuard {
 
 	@Value("${idempotency.lock-poll-interval-millis}")
 	private long lockPollIntervalMillis;
-
-	public IdempotencyKeyGuard(
-			@Qualifier("idempotencyRedisTemplate") StringRedisTemplate redisTemplate) {
-		this.redisTemplate = redisTemplate;
-	}
 
 	public boolean tryAcquire(String namespace, String idempotencyKey) {
 		Boolean acquired = redisTemplate.opsForValue()

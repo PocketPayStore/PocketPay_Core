@@ -8,8 +8,6 @@ spring:
       ddl-auto: create-drop
   data:
     redis:
-      ssl:
-        enabled: false
       connect-timeout: 2s
       timeout: 2s
 
@@ -40,20 +38,6 @@ mock-pg:
 
 payment-events:
   channel: payment:status-changed:test
-  executor:
-    core-pool-size: 2
-    max-pool-size: 4
-    queue-capacity: 100
-
-redis:
-  clients:
-    idempotency:
-      max-active: 10
-    payment-event:
-      max-active: 5
-    max-idle: 5
-    min-idle: 1
-    max-wait: 2s
 
 
 resilience4j:
