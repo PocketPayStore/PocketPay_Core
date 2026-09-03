@@ -20,10 +20,6 @@ public class StockService {
 		stockLockingService.reserve(productId, quantity);
 	}
 
-	public void releaseReservation(Long productId, int quantity) {
-		stockLockingService.release(productId, quantity);
-	}
-
 	public void confirmForOrder(Long orderId) {
 		OrderItem item = findOrder(orderId);
 		stockLockingService.confirm(item.getProductId(), item.getQuantity());
