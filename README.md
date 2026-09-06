@@ -86,7 +86,9 @@ JDK 17, MySQL, Redis와 PocketPay PG가 필요합니다. 로컬 설정의 DB·Re
 주문 생성, 결제 승인과 포인트 예약·확정, PG 장애 처리, 환불·재고 동시성, Redis 이벤트와 실패 로그를 테스트합니다.
 
 ## 연관 프로젝트
+- **[PocketPay PG](https://github.com/PocketPayStore/PocketPay_PG)**: 장애 상황을 제공하는 Mock PG
+- **[PocketPay Batch](https://github.com/PocketPayStore/PocketPay_Batch)**: 주문 만료, 미확정 결제 대사, 후처리 복구와 정산
+- **[PocketPay Admin](https://github.com/PocketPayStore/PocketPay_Admin)**: 결제·정산 조회와 운영 화면
 
-- **PocketPay PG**: 장애 상황을 제공하는 Mock PG
-- **PocketPay Batch**: 주문 만료, 미확정 결제 대사, 후처리 복구와 정산
-- **PocketPay Admin**: 결제·정산 조회와 운영 화면
+## 참고 블로그
+- **[결제 시스템 참고 블로그](https://velog.io/@rlaehddbs4521/series/PocketPay)**
