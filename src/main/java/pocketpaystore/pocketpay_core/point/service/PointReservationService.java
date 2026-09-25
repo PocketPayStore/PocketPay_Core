@@ -3,6 +3,7 @@ package pocketpaystore.pocketpay_core.point.service;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
+
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.PointErrorCode;
 import pocketpaystore.pocketpay_core.point.domain.PointBalance;
@@ -31,10 +32,8 @@ public class PointReservationService {
 	}
 
 	public void confirm(Long paymentId, Long orderId) {
-		PointReservation reservation = findReservationForUpdate(paymentId);
-		if (!reservation.isReserved()) {
-			return;
-		}
+		PointReservation reservation = findReservation(paymentId);
+		validateReserved(reservation);
 		PointBalance balance = findBalanceForUpdate(reservation.getMemberId());
 		Long balanceAfter = balance.confirmReservation(reservation.getAmount());
 		reservation.markUsed();
@@ -43,10 +42,8 @@ public class PointReservationService {
 	}
 
 	public void release(Long paymentId) {
-		PointReservation reservation = findReservationForUpdate(paymentId);
-		if (!reservation.isReserved()) {
-			return;
-		}
+		PointReservation reservation = findReservation(paymentId);
+		validateReserved(reservation);
 		PointBalance balance = findBalanceForUpdate(reservation.getMemberId());
 		balance.releaseReservation(reservation.getAmount());
 		reservation.markReleased();
@@ -57,8 +54,15 @@ public class PointReservationService {
 				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_BALANCE_NOT_FOUND));
 	}
 
-	private PointReservation findReservationForUpdate(Long paymentId) {
-		return pointReservationRepository.findByPaymentIdWithLock(paymentId)
+	private PointReservation findReservation(Long paymentId) {
+		return pointReservationRepository.findByPaymentId(paymentId)
 				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_RESERVATION_NOT_FOUND));
 	}
+
+	private void validateReserved(PointReservation reservation) {
+		if (!reservation.isReserved()) {
+			throw new CustomException(PointErrorCode.POINT_RESERVATION_NOT_FOUND);
+		}
+	}
+
 }
