@@ -1,0 +1,53 @@
+# application-local.yml 템플릿 — 이 파일을 같은 디렉터리에 application-local.yml로 복사한 뒤
+# 실제 값으로 채워서 쓴다. application-local.yml은 .gitignore 대상이라 저장소엔 커밋되지 않는다.
+# spring.profiles.active=local(application.yml 기본값)이 이 파일을 필요로 하므로,
+# 이 파일 없이는 애플리케이션이 아예 뜨지 않는다.
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/pocketpay?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: pocketpay
+    password: change-me
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      ssl:
+        enabled: false
+
+toss:
+  base-url: https://api.tosspayments.com
+  secret-key: ""
+
+payment-events:
+  channel: payment:status-changed
+
+order:
+  reservation-timeout-minutes: 10
+
+payment:
+  point-earn-rate: 0.01
+
+idempotency:
+  lock-ttl-seconds: 60
+  result-ttl-seconds: 300
+  lock-wait-timeout-millis: 3000
+  lock-poll-interval-millis: 100
+
+lock:
+  # default-wait-time-seconds는 default-lease-time-seconds보다 커야 한다
+  # (DistributedLockAop가 시작 시점에 이 관계를 검증하고, 어기면 부팅에 실패한다).
+  default-wait-time-seconds: 5
+  default-lease-time-seconds: 3
+
+jwt:
+  secret: change-me-to-a-long-random-string-at-least-32-bytes
+  expiry-hours: 24
+
+pg:
+  provider-name: toss
+
+slack:
+  webhook-url: ""
