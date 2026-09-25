@@ -13,6 +13,6 @@ public class PaymentAlertCreatedEventListener {
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void sendToSlack(PaymentAlertCreatedEvent event) {
-		slackNotificationService.send(event.message());
+		slackNotificationService.send(event.alertId(), event.message());
 	}
 }

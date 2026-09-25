@@ -1,6 +1,7 @@
 package pocketpaystore.pocketpay_core.common.alert;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -23,9 +24,9 @@ class PaymentAlertLogServiceIntegrationTest extends RedisTestContainer {
 
 	@Test
 	void savesAlertBeforeSendingSlackAfterCommit() {
-		paymentAlertLogService.record(PaymentAlertType.STOCK_CONFIRMATION_FAILED, AlertSeverity.CRITICAL,
-				101L, 202L, "재고 확정 실패");
+		paymentAlertLogService.record(PaymentAlertType.PG_APPROVED_PERSIST_FAILED, AlertSeverity.CRITICAL,
+				101L, 202L, "PG 승인 후 DB 기록 실패");
 		assertThat(paymentAlertLogRepository.count()).isPositive();
-		verify(slackNotificationService, timeout(1000)).send(anyString());
+		verify(slackNotificationService, timeout(1000)).send(any(), anyString());
 	}
 }

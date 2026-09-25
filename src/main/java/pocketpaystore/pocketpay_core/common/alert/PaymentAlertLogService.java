@@ -22,4 +22,19 @@ public class PaymentAlertLogService {
 		eventPublisher.publishEvent(new PaymentAlertCreatedEvent(alert.getId(),
 				"[" + severity + "] " + type + " (paymentId=" + paymentId + ", orderId=" + orderId + "): " + message));
 	}
+
+	@Transactional
+	public void markProcessing(Long alertId) {
+		repository.findById(alertId).ifPresent(PaymentAlertLog::markProcessing);
+	}
+
+	@Transactional
+	public void markResolved(Long alertId) {
+		repository.findById(alertId).ifPresent(PaymentAlertLog::markResolved);
+	}
+
+	@Transactional
+	public void markFailed(Long alertId) {
+		repository.findById(alertId).ifPresent(PaymentAlertLog::markFailed);
+	}
 }
