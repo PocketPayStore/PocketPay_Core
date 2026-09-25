@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
-import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
 import pocketpaystore.pocketpay_core.member.domain.Member;
 import pocketpaystore.pocketpay_core.member.domain.MemberRole;
 import pocketpaystore.pocketpay_core.member.repository.MemberRepository;
@@ -91,16 +90,46 @@ class OrderServiceTest extends RedisTestContainer {
 	}
 
 	@Test
-	@DisplayName("동일한 Idempotency-Key로 재요청하면 중복 요청 예외가 발생한다")
-	void createOrder_duplicateIdempotencyKey() {
-		String idempotencyKey = UUID.randomUUID().toString();
+	@DisplayName("같은 클라이언트 Idempotency-Key로 더블클릭해도 주문은 한 건만 생성되고, 두 번째 호출은 같은 응답을 재사용한다")
+	void createOrder_sameClientKeyTwice_reusesCachedResult() {
+		String clientKey = UUID.randomUUID().toString();
 		CreateOrderRequest request = new CreateOrderRequest(product.getId(), 1);
-		orderService.createOrder(buyer.getId(), request, idempotencyKey);
 
-		Throwable thrown = catchThrowable(() -> orderService.createOrder(buyer.getId(), request, idempotencyKey));
+		OrderResponse first = orderService.createOrder(buyer.getId(), request, clientKey);
+		OrderResponse second = orderService.createOrder(buyer.getId(), request, clientKey);
 
-		assertThat(thrown).isInstanceOf(CustomException.class);
-		assertThat(((CustomException) thrown).getErrorCode()).isEqualTo(CommonErrorCode.DUPLICATE_REQUEST);
+		assertThat(second.getOrderNumber()).isEqualTo(first.getOrderNumber());
+		Stock stock = stockRepository.findByProductId(product.getId()).orElseThrow();
+		assertThat(stock.getReservedQuantity()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("다른 클라이언트 Idempotency-Key면 같은 내용이라도 각각 독립된 주문으로 생성된다")
+	void createOrder_differentClientKeys_createIndependentOrders() {
+		CreateOrderRequest request = new CreateOrderRequest(product.getId(), 1);
+
+		OrderResponse first = orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString());
+		OrderResponse second = orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString());
+
+		assertThat(first.getOrderNumber()).isNotEqualTo(second.getOrderNumber());
+		Stock stock = stockRepository.findByProductId(product.getId()).orElseThrow();
+		assertThat(stock.getReservedQuantity()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("서로 다른 회원이 같은 Idempotency-Key를 보내도 각자 독립된 주문으로 생성된다")
+	void createOrder_sameKeyDifferentMembers_createIndependentOrders() {
+		Member otherBuyer = memberRepository.save(
+				Member.builder().email(uniqueEmail()).password("test1234").name("다른 구매자").role(MemberRole.USER).build());
+		String sharedKey = UUID.randomUUID().toString();
+		CreateOrderRequest request = new CreateOrderRequest(product.getId(), 1);
+
+		OrderResponse first = orderService.createOrder(buyer.getId(), request, sharedKey);
+		OrderResponse second = orderService.createOrder(otherBuyer.getId(), request, sharedKey);
+
+		assertThat(first.getOrderNumber()).isNotEqualTo(second.getOrderNumber());
+		Stock stock = stockRepository.findByProductId(product.getId()).orElseThrow();
+		assertThat(stock.getReservedQuantity()).isEqualTo(2);
 	}
 
 	private String uniqueEmail() {
