@@ -17,12 +17,15 @@ import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentCancel;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatusHistory;
 import pocketpaystore.pocketpay_core.payment.domain.Refund;
+import pocketpaystore.pocketpay_core.payment.domain.RefundAllocation;
 import pocketpaystore.pocketpay_core.payment.dto.response.PreparedRefund;
 import pocketpaystore.pocketpay_core.payment.event.publisher.PaymentStatusEventPublisher;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentCancelRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentStatusHistoryRepository;
 import pocketpaystore.pocketpay_core.payment.repository.RefundRepository;
+import pocketpaystore.pocketpay_core.point.service.PointEarnReversalService;
+import pocketpaystore.pocketpay_core.point.service.PointService;
 
 @Service
 @RequiredArgsConstructor
@@ -35,11 +38,15 @@ public class PaymentRefundStateService {
 	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 	private final OrderRepository orderRepository;
 	private final PaymentStatusEventPublisher statusEventPublisher;
+	private final PointService pointService;
+	private final PointEarnReversalService pointEarnReversalService;
 
 	@Transactional
 	public PreparedRefund prepare(Long orderId, int quantity, String idempotencyKey) {
 		Payment payment = paymentRepository.findRefundableByOrderIdWithLock(orderId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+		Order order = orderRepository.findById(orderId)
+				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
 
 		OrderItem orderItem = orderItemRepository.findByOrderId(orderId)
 				.orElseThrow(() -> new CustomException(OrderErrorCode.EMPTY_ORDER_ITEMS));
@@ -55,25 +62,29 @@ public class PaymentRefundStateService {
 			throw new CustomException(CommonErrorCode.DUPLICATE_REQUEST);
 		}
 
+		long originalTotal = payment.getAmount() + payment.getUsedPointAmount();
+		RefundAllocation allocation;
 		try {
-			payment.refund(refundAmount);
+			allocation = payment.refund(refundAmount);
 		} catch (CustomException e) {
 			refund.toRejected();
 			throw e;
 		}
 
+		if (allocation.pointAmount() > 0) {
+			pointService.restore(order.getMemberId(), order.getId(), allocation.pointAmount());
+		}
+		pointEarnReversalService.reverseProportionally(payment.getId(), order.getId(), refundAmount, originalTotal);
+
 		refund.toProcessing();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
-		Order order = orderRepository.findById(payment.getOrderId())
-				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
 		statusEventPublisher.publish(payment, order);
 		return PreparedRefund.builder().refund(refund).payment(payment).build();
 	}
 
 	@Transactional
 	public Refund complete(Long paymentId, Long refundId, Long refundAmount, String reason) {
-		PaymentCancel paymentCancel = PaymentCancel.create(paymentId, refundId, refundAmount, reason);
-		paymentCancelRepository.save(paymentCancel);
+		paymentCancelRepository.save(PaymentCancel.create(paymentId, refundId, refundAmount, reason));
 		Refund refund = refundRepository.findById(refundId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 		refund.toCompleted();

@@ -25,8 +25,19 @@ public class PointService {
 		PointBalance balance = pointBalanceRepository.findByMemberIdWithLock(memberId)
 				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_BALANCE_NOT_FOUND));
 		Long balanceAfter = balance.adjust(amount);
-		PointLedger pointLedger = PointLedger.create(memberId, orderId, PointLedgerType.EARN, amount, balanceAfter);
-		pointLedgerRepository.save(pointLedger);
+		pointLedgerRepository.save(PointLedger.create(memberId, orderId, PointLedgerType.EARN, amount, balanceAfter));
+	}
+
+	@Transactional
+	public void restore(Long memberId, Long orderId, Long amount) {
+		if (amount <= 0) {
+			return;
+		}
+		PointBalance balance = pointBalanceRepository.findByMemberIdWithLock(memberId)
+				.orElseThrow(() -> new CustomException(PointErrorCode.POINT_BALANCE_NOT_FOUND));
+		Long balanceAfter = balance.adjust(amount);
+		pointLedgerRepository.save(PointLedger.create(
+				memberId, orderId, PointLedgerType.CANCEL_RESTORE, amount, balanceAfter));
 	}
 
 }

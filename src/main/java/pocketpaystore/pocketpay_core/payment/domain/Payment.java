@@ -55,6 +55,9 @@ public class Payment extends BaseEntity {
 	@Column(name = "refundable_amount", nullable = false)
 	private Long refundableAmount;
 
+	@Column(name = "refundable_point_amount", nullable = false)
+	private Long refundablePointAmount;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private PaymentStatus status;
@@ -79,6 +82,7 @@ public class Payment extends BaseEntity {
 				.usedPointAmount(usedPointAmount)
 				.pgTransactionId(pgTransactionId)
 				.refundableAmount(0L)
+				.refundablePointAmount(0L)
 				.status(PaymentStatus.READY)
 				.build();
 	}
@@ -92,6 +96,7 @@ public class Payment extends BaseEntity {
 		validateTransition(PaymentStatus.IN_PROGRESS);
 		this.approvedAt = LocalDateTime.now();
 		this.refundableAmount = this.amount;
+		this.refundablePointAmount = this.usedPointAmount;
 		this.status = PaymentStatus.DONE;
 	}
 
@@ -112,7 +117,7 @@ public class Payment extends BaseEntity {
 		this.status = PaymentStatus.CANCELED;
 	}
 
-	public void refund(Long refundAmount) {
+	public RefundAllocation refund(Long refundAmount) {
 		if (refundAmount == null || refundAmount <= 0) {
 			throw new CustomException(PaymentErrorCode.INVALID_REFUND_AMOUNT);
 		}
@@ -121,11 +126,20 @@ public class Payment extends BaseEntity {
 				&& this.status != PaymentStatus.CANCELED) {
 			throw new CustomException(PaymentErrorCode.INVALID_PAYMENT_STATE);
 		}
-		if (this.refundableAmount < refundAmount) {
+		long originalTotal = this.amount + this.usedPointAmount;
+		long pointPortion = (originalTotal == 0 || this.usedPointAmount == 0)
+				? 0L
+				: (refundAmount * this.usedPointAmount) / originalTotal;
+		long pgPortion = refundAmount - pointPortion;
+		if (this.refundableAmount < pgPortion || this.refundablePointAmount < pointPortion) {
 			throw new CustomException(PaymentErrorCode.EXCESSIVE_REFUND_AMOUNT);
 		}
-		this.refundableAmount -= refundAmount;
-		this.status = (this.refundableAmount == 0) ? PaymentStatus.CANCELED : PaymentStatus.PARTIAL_CANCELED;
+		this.refundableAmount -= pgPortion;
+		this.refundablePointAmount -= pointPortion;
+		this.status = (this.refundableAmount == 0 && this.refundablePointAmount == 0)
+				? PaymentStatus.CANCELED
+				: PaymentStatus.PARTIAL_CANCELED;
+		return new RefundAllocation(pgPortion, pointPortion);
 	}
 
 	private void validateTransition(PaymentStatus expected) {
