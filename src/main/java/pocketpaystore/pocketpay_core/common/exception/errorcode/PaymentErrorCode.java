@@ -16,7 +16,11 @@ public enum PaymentErrorCode implements ErrorCode {
 	INVALID_REFUND_STATE("PAYMENT_005", "환불 상태를 변경할 수 없습니다.", HttpStatus.BAD_REQUEST),
 	INVALID_POINT_USE_AMOUNT("PAYMENT_006", "사용 포인트는 0 이상, 주문 금액 이하여야 합니다.", HttpStatus.BAD_REQUEST),
 	AUTHORIZED_AMOUNT_MISMATCH("PAYMENT_007", "결제 인증된 금액과 승인 요청 금액이 일치하지 않습니다.", HttpStatus.BAD_REQUEST),
-	PAYMENT_ALREADY_IN_PROGRESS("PAYMENT_008", "이 주문에 대해 이미 처리 중인 결제 시도가 있습니다.", HttpStatus.CONFLICT);
+	PAYMENT_ALREADY_IN_PROGRESS("PAYMENT_008", "이 주문에 대해 이미 처리 중인 결제 시도가 있습니다.", HttpStatus.CONFLICT),
+	PAYMENT_APPROVAL_TIMEOUT("PAYMENT_009", "결제 승인 처리가 지연되고 있습니다. 잠시 후 다시 시도해주세요.", HttpStatus.CONFLICT),
+	REFUND_TIMEOUT("PAYMENT_010", "환불 처리가 지연되고 있습니다. 잠시 후 다시 시도해주세요.", HttpStatus.CONFLICT),
+	PAYMENT_RESULT_UNREADABLE("PAYMENT_011", "결제 결과를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.CONFLICT),
+	REFUND_RESULT_UNREADABLE("PAYMENT_012", "환불 결과를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.CONFLICT);
 
 	private final String code;
 	private final String message;

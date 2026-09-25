@@ -82,7 +82,7 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 
 	@BeforeEach
 	void setUp() {
-		when(pgClient.cancel(any())).thenReturn(new CancelResponse("PG-TX-REFUND", "0000", LocalDateTime.now()));
+		when(pgClient.cancel(any(), any(), any())).thenReturn(new CancelResponse("PG-TX-REFUND", "DONE"));
 	}
 
 	@Test
@@ -96,7 +96,8 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 				Product.builder().vendorId(vendor.getId()).name("환불 테스트 카드").price(UNIT_PRICE).build());
 
 		Order order = orderRepository.save(
-				Order.create("ORD-" + UUID.randomUUID(), buyer.getId(), PAYMENT_AMOUNT, UUID.randomUUID().toString()));
+				Order.create("ORD-" + UUID.randomUUID(), buyer.getId(), PAYMENT_AMOUNT, UUID.randomUUID().toString(),
+						LocalDateTime.now().plusMinutes(10)));
 		String orderNumber = order.getOrderNumber();
 		orderItemRepository.save(OrderItem.create(order.getId(), product.getId(), 10, UNIT_PRICE));
 
@@ -115,12 +116,14 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 		AtomicInteger unexpectedFailureCount = new AtomicInteger();
 
 		for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
-			String idempotencyKey = UUID.randomUUID().toString();
-			CreateRefundRequest request = new CreateRefundRequest(QUANTITY_PER_REQUEST, "단순 변심");
+			// reason에 인덱스를 넣어 서로 다른 멱등키를 갖게 한다 — 여기서 검증하려는 건
+			// "동시에 들어온 서로 다른 정당한 환불 요청들이 환불 가능 금액 한도를 넘지 않는가"이지,
+			// 같은 내용의 중복 제출(멱등키 dedup의 역할) 검증이 아니다.
+			CreateRefundRequest request = new CreateRefundRequest(QUANTITY_PER_REQUEST, "단순 변심 " + i);
 			executor.submit(() -> {
 				try {
 					startLatch.await();
-					paymentRefundService.refund(buyer.getId(), orderNumber, request, idempotencyKey);
+					paymentRefundService.refund(buyer.getId(), orderNumber, request);
 					successCount.incrementAndGet();
 				} catch (CustomException e) {
 					if (e.getErrorCode() == PaymentErrorCode.EXCESSIVE_REFUND_AMOUNT) {

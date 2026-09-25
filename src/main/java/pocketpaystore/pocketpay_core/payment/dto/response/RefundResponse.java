@@ -2,13 +2,17 @@ package pocketpaystore.pocketpay_core.payment.dto.response;
 
 import java.time.LocalDateTime;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.Refund;
 
 @Getter
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class RefundResponse {
 
 	private Long refundId;
