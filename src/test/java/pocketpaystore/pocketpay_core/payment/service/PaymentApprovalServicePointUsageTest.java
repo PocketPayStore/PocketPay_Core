@@ -44,6 +44,7 @@ import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.point.domain.PointBalance;
 import pocketpaystore.pocketpay_core.point.domain.PointReservationStatus;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
+import pocketpaystore.pocketpay_core.point.repository.PointEarnLogRepository;
 import pocketpaystore.pocketpay_core.point.repository.PointReservationRepository;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.domain.Stock;
@@ -85,6 +86,9 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 	private PointReservationRepository pointReservationRepository;
 
 	@Autowired
+	private PointEarnLogRepository pointEarnLogRepository;
+
+	@Autowired
 	private VendorRepository vendorRepository;
 
 	@MockitoBean
@@ -117,10 +121,10 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		OrderResponse order = createOrder(1);
 
 		when(pgClient.approve(any(), argThat(req -> req.getAmount() == 7_000L)))
-				.thenReturn(new ApprovalResponse("PG-TX-POINT", "0000", "OK", LocalDateTime.now()));
+				.thenReturn(new ApprovalResponse("PG-TX-POINT", "ORDER-TEST", "DONE", 7_000L, LocalDateTime.now()));
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-PARTIAL", 3_000L, 7_000L));
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-PARTIAL", 3_000L, 7_000L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.DONE.name());
 		assertThat(response.getAmount()).isEqualTo(7_000L);
@@ -130,14 +134,16 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		assertThat(payment.getAmount()).isEqualTo(7_000L);
 		assertThat(payment.getUsedPointAmount()).isEqualTo(3_000L);
 
-		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
-		assertThat(balance.getBalance()).isEqualTo(70L);
-		assertThat(balance.getReservedAmount()).isZero();
+		PointBalance balanceAfterApproval = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
+		assertThat(balanceAfterApproval.getReservedAmount()).isZero();
 		assertThat(pointReservationRepository.findByPaymentId(response.getId()).orElseThrow().getStatus())
 				.isEqualTo(PointReservationStatus.USED);
 
 		Order orderEntity = orderRepository.findByOrderNumber(order.getOrderNumber()).orElseThrow();
 		assertThat(orderEntity.getStatus()).isEqualTo(OrderStatus.PAID);
+
+		PointBalance balanceAfterEarn = awaitPointBalance(buyer.getId(), 70L);
+		assertThat(balanceAfterEarn.getBalance()).isEqualTo(70L);
 	}
 
 	@Test
@@ -147,7 +153,7 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		OrderResponse order = createOrder(1);
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(),
+				buyer.getId(), order.getOrderNumber(),
 				new ApprovePaymentRequest("PG-KEY-FULL-POINTS", 10_000L, 0L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.DONE.name());
@@ -171,7 +177,7 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		when(pgClient.approve(any(), any())).thenThrow(badRequest);
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(),
+				buyer.getId(), order.getOrderNumber(),
 				new ApprovePaymentRequest("PG-KEY-REJECT", 3_000L, 7_000L));
 
 		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
@@ -187,9 +193,10 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		givenPointBalance(3_000L);
 		OrderResponse order = createOrder(1);
 		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any())).thenThrow(new RuntimeException("connection refused"));
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(),
+				buyer.getId(), order.getOrderNumber(),
 				new ApprovePaymentRequest("PG-KEY-TIMEOUT", 3_000L, 7_000L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
@@ -207,7 +214,7 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		OrderResponse order = createOrder(1);
 
 		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-INSUFFICIENT", 3_000L, 7_000L)))
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-INSUFFICIENT", 3_000L, 7_000L)))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
@@ -222,7 +229,7 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		OrderResponse order = createOrder(1);
 
 		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-EXCESS", 15_000L, 0L)))
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-EXCESS", 15_000L, 0L)))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(PaymentErrorCode.INVALID_POINT_USE_AMOUNT);
@@ -231,26 +238,50 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 	}
 
 	@Test
-	@DisplayName("재고 확정이 실패해도 승인된 결제와 포인트 처리를 유지하고 중요 알림을 남긴다")
-	void usePoints_stockConfirmationFails_keepsDoneAndAlerts() {
+	@DisplayName("결제 완료 처리 중 재고 확정이 실패하면 포인트 사용·적립까지 전부 롤백되고 TIMEOUT_UNKNOWN으로 남는다")
+	void usePoints_stockConfirmationFails_rollsBackEverything() {
 		givenPointBalance(3_000L);
 		OrderResponse order = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order.getOrderNumber()).orElseThrow().getId();
 
 		when(pgClient.approve(any(), any()))
-				.thenReturn(new ApprovalResponse("PG-TX-COMPENSATE", "0000", "OK", LocalDateTime.now()));
+				.thenReturn(new ApprovalResponse("PG-TX-ROLLBACK", "ORDER-TEST", "DONE", 7_000L, LocalDateTime.now()));
 		doThrow(new RuntimeException("재고 확정 실패")).when(stockService).confirmForOrder(any());
 
-		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-COMPENSATE", 3_000L, 7_000L));
+		assertThatThrownBy(() -> paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-ROLLBACK", 3_000L, 7_000L)))
+				.isInstanceOf(RuntimeException.class);
 
-		assertThat(response).isNotNull();
-
-		Payment payment = paymentRepository.findById(response.getId()).orElseThrow();
-		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.DONE);
+		Payment payment = paymentRepository.findAll().stream()
+				.filter(p -> p.getOrderId().equals(orderId))
+				.findFirst().orElseThrow();
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN);
 
 		PointBalance balance = pointBalanceRepository.findByMemberId(buyer.getId()).orElseThrow();
-		assertThat(balance.getBalance()).isEqualTo(70L);
-		verify(criticalAlertService).alertStockConfirmationFailed(any(), any(), any());
+		assertThat(balance.getBalance()).isEqualTo(3_000L);
+		assertThat(balance.getReservedAmount()).isEqualTo(3_000L);
+		assertThat(pointReservationRepository.findByPaymentId(payment.getId()).orElseThrow().getStatus())
+				.isEqualTo(PointReservationStatus.RESERVED);
+		assertThat(pointEarnLogRepository.findAll().stream()
+				.noneMatch(log -> log.getPaymentId().equals(payment.getId()))).isTrue();
+
+		verify(criticalAlertService).alertPgApprovedButPersistFailed(any(), any(), any(), any(), any());
+	}
+
+	private PointBalance awaitPointBalance(Long memberId, long expected) {
+		long deadline = System.currentTimeMillis() + 2000;
+		while (System.currentTimeMillis() < deadline) {
+			PointBalance balance = pointBalanceRepository.findByMemberId(memberId).orElseThrow();
+			if (balance.getBalance() == expected) {
+				return balance;
+			}
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		throw new AssertionError("expected point balance " + expected + " not reached for memberId=" + memberId);
 	}
 
 	private void givenPointBalance(Long amount) {

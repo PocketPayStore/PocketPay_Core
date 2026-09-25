@@ -25,6 +25,7 @@ import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
 
 @Slf4j
@@ -38,31 +39,30 @@ public class PaymentApprovalService {
 	private final PaymentStateService paymentStateService;
 	private final PgClient pgClient;
 	private final IdempotencyKeyGuard idempotencyKeyGuard;
-	private final PaymentCompletionService paymentCompletionService;
 	private final CriticalAlertService criticalAlertService;
 	private final PointBalanceRepository pointBalanceRepository;
 	private final ObjectMapper objectMapper;
 
-	@Value("${pg.provider-name:mock-pg}")
+	@Value("${pg.provider-name}")
 	private String pgProviderName;
 
-	public PaymentResponse approve(Long memberId, String orderNumber, String idempotencyKey,
-									ApprovePaymentRequest request) {
+	public PaymentResponse approve(Long memberId, String orderNumber, ApprovePaymentRequest request) {
+		String idempotencyKey = generateIdempotencyKey(orderNumber, request.getPaymentKey());
 		PaymentResponse cached = readCachedResult(idempotencyKey);
 		if (cached != null) {
-			return requireSameOrder(cached, orderNumber);
+			return cached;
 		}
 
 		if (!idempotencyKeyGuard.tryAcquire(IDEMPOTENCY_NAMESPACE, idempotencyKey)) {
-			String json = idempotencyKeyGuard.waitForCachedResult(IDEMPOTENCY_NAMESPACE, idempotencyKey);
-			PaymentResponse paymentResponse = deserializeOrThrow(idempotencyKey, json);
-			return requireSameOrder(paymentResponse, orderNumber);
+			String json = idempotencyKeyGuard.waitForCachedResult(
+					IDEMPOTENCY_NAMESPACE, idempotencyKey, PaymentErrorCode.PAYMENT_APPROVAL_TIMEOUT);
+			return deserializeOrThrow(idempotencyKey, json);
 		}
 
 		try {
 			PaymentResponse response = doApprove(memberId, orderNumber, idempotencyKey,
 					request.getPaymentKey(), request.getUsePointAmount(), request.getAmount());
-			if (PaymentStatus.DONE.name().equals(response.getStatus())) {
+			if (isCacheableOutcome(response)) {
 				cacheResult(idempotencyKey, response);
 			}
 			return response;
@@ -71,11 +71,9 @@ public class PaymentApprovalService {
 		}
 	}
 
-	private PaymentResponse requireSameOrder(PaymentResponse response, String orderNumber) {
-		if (!orderNumber.equals(response.getOrderNumber())) {
-			throw new CustomException(CommonErrorCode.IDEMPOTENCY_KEY_MISMATCH);
-		}
-		return response;
+	private boolean isCacheableOutcome(PaymentResponse response) {
+		return PaymentStatus.DONE.name().equals(response.getStatus())
+				|| PaymentStatus.FAILED.name().equals(response.getStatus());
 	}
 
 	private PaymentResponse readCachedResult(String idempotencyKey) {
@@ -96,7 +94,7 @@ public class PaymentApprovalService {
 			return objectMapper.readValue(json, PaymentResponse.class);
 		} catch (Exception e) {
 			log.error("[Payment] 대기 후 받은 캐시 응답 역직렬화 실패: idempotencyKey={}", idempotencyKey, e);
-			throw new CustomException(CommonErrorCode.REQUEST_TIMEOUT);
+			throw new CustomException(PaymentErrorCode.PAYMENT_RESULT_UNREADABLE);
 		}
 	}
 
@@ -132,12 +130,12 @@ public class PaymentApprovalService {
 		}
 
 		if (pgAmount == 0) {
-			Payment payment = completePayment(paymentId, order);
+			Payment payment = paymentStateService.markDone(paymentId, order.getId());
 			return PaymentResponse.from(payment, orderNumber);
 		}
 
 		try {
-			pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, pgAmount, order.getOrderNumber()));
+			pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, order.getOrderNumber(), pgAmount));
 		} catch (FeignException e) {
 			if (isUserFault(e)) {
 				log.info("[Payment] PG 승인 거절(유저 귀책, 재시도 없이 즉시 실패): orderId={}, status={}", order.getId(), e.status());
@@ -145,15 +143,45 @@ public class PaymentApprovalService {
 						paymentId, String.valueOf(e.status()), e.contentUTF8());
 				return PaymentResponse.from(payment, orderNumber);
 			}
-			log.error("[Payment] PG 승인 재시도 소진(시스템 장애): orderId={}", order.getId(), e);
-			Payment payment = paymentStateService.markTimeoutUnknown(paymentId);
-			return PaymentResponse.from(payment, orderNumber);
+			log.error("[Payment] PG 승인 재시도 소진(시스템 장애), 즉시 재조회 시도: orderId={}", order.getId(), e);
+			return resolveAfterApprovalUncertain(paymentId, order, orderNumber, paymentKey, pgAmount);
 		} catch (Exception e) {
-			log.error("[Payment] PG 승인 호출 실패(네트워크, 재시도 소진): orderId={}", order.getId(), e);
+			log.error("[Payment] PG 승인 호출 실패(네트워크, 재시도 소진), 즉시 재조회 시도: orderId={}", order.getId(), e);
+			return resolveAfterApprovalUncertain(paymentId, order, orderNumber, paymentKey, pgAmount);
+		}
+
+		return completeOrFallback(paymentId, order, orderNumber, paymentKey, pgAmount);
+	}
+
+	private PaymentResponse resolveAfterApprovalUncertain(Long paymentId, Order order, String orderNumber,
+			String paymentKey, long pgAmount) {
+		ApprovalResponse inquiry;
+		try {
+			inquiry = pgClient.inquire(paymentKey);
+		} catch (Exception e) {
+			log.error("[Payment] 즉시 재조회 실패, TIMEOUT_UNKNOWN으로 남겨 배치 재확인에 맡김: orderId={}", order.getId(), e);
 			Payment payment = paymentStateService.markTimeoutUnknown(paymentId);
 			return PaymentResponse.from(payment, orderNumber);
 		}
 
+		if ("DONE".equals(inquiry.getStatus())) {
+			log.info("[Payment] 즉시 재조회로 승인 확인, 결제 완료 처리: orderId={}", order.getId());
+			return completeOrFallback(paymentId, order, orderNumber, paymentKey, pgAmount);
+		}
+		if (isDefinitiveFailure(inquiry.getStatus())) {
+			log.info("[Payment] 즉시 재조회로 승인 실패 확인: orderId={}, status={}", order.getId(), inquiry.getStatus());
+			Payment payment = paymentStateService.markPaymentFailed(
+					paymentId, inquiry.getStatus(), "즉시 재조회로 실패 확인");
+			return PaymentResponse.from(payment, orderNumber);
+		}
+		log.info("[Payment] 즉시 재조회 결과 불명확({}), TIMEOUT_UNKNOWN으로 남겨 배치 재확인에 맡김: orderId={}",
+				inquiry.getStatus(), order.getId());
+		Payment payment = paymentStateService.markTimeoutUnknown(paymentId);
+		return PaymentResponse.from(payment, orderNumber);
+	}
+
+	private PaymentResponse completeOrFallback(Long paymentId, Order order, String orderNumber,
+			String paymentKey, long pgAmount) {
 		Payment payment;
 		try {
 			payment = paymentStateService.markDone(paymentId, order.getId());
@@ -163,14 +191,11 @@ public class PaymentApprovalService {
 			paymentStateService.markTimeoutUnknown(paymentId);
 			throw e;
 		}
-		paymentCompletionService.complete(paymentId, order.getId());
 		return PaymentResponse.from(payment, orderNumber);
 	}
 
-	private Payment completePayment(Long paymentId, Order order) {
-		Payment payment = paymentStateService.markDone(paymentId, order.getId());
-		paymentCompletionService.complete(paymentId, order.getId());
-		return payment;
+	private boolean isDefinitiveFailure(String status) {
+		return "ABORTED".equals(status) || "EXPIRED".equals(status) || "CANCELED".equals(status);
 	}
 
 	private void validateUsePointAmount(Long memberId, long usePointAmount, Long orderTotalAmount) {
@@ -188,6 +213,10 @@ public class PaymentApprovalService {
 
 	private boolean isUserFault(FeignException e) {
 		return e.status() >= 400 && e.status() < 500;
+	}
+
+	private String generateIdempotencyKey(String orderNumber, String paymentKey) {
+		return "confirm:" + orderNumber + ":" + paymentKey;
 	}
 
 }

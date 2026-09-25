@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,11 +19,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import feign.FeignException;
 
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
-import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
 import pocketpaystore.pocketpay_core.common.exception.errorcode.PaymentErrorCode;
 import pocketpaystore.pocketpay_core.member.domain.Member;
 import pocketpaystore.pocketpay_core.member.domain.MemberRole;
@@ -101,10 +103,10 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	void approve_success() {
 		OrderResponse order0 = createOrder(1);
 		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
-		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-1", "0000", "OK", LocalDateTime.now()));
+		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-1", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-TX-1", 0L, 10_000L));
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-TX-1", 0L, 10_000L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.DONE.name());
 
@@ -128,7 +130,7 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		when(pgClient.approve(any(), any())).thenThrow(badRequest);
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-A", 0L, 10_000L));
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-A", 0L, 10_000L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.FAILED.name());
 		Order order = orderRepository.findById(orderId).orElseThrow();
@@ -148,14 +150,14 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		when(badRequest.status()).thenReturn(400);
 		when(pgClient.approve(any(), any()))
 				.thenThrow(badRequest)
-				.thenReturn(new ApprovalResponse("PG-TX-RETRY", "0000", "OK", LocalDateTime.now()));
+				.thenReturn(new ApprovalResponse("PG-TX-RETRY", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
 
 		PaymentResponse firstAttempt = paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-B", 0L, 10_000L));
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-B", 0L, 10_000L));
 		assertThat(firstAttempt.getStatus()).isEqualTo(PaymentStatus.FAILED.name());
 
 		PaymentResponse secondAttempt = paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-C", 0L, 10_000L));
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-C", 0L, 10_000L));
 
 		assertThat(secondAttempt.getStatus()).isEqualTo(PaymentStatus.DONE.name());
 		assertThat(secondAttempt.getId()).isNotEqualTo(firstAttempt.getId());
@@ -169,23 +171,18 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	}
 
 	@Test
-	@DisplayName("이미 다른 주문의 결제 성공 응답을 캐싱한 Idempotency-Key를 다른 주문에 재사용하면 캐시를 반환하지 않고 명시적으로 거절한다")
-	void approve_idempotencyKeyReusedForDifferentOrder_rejected() {
-		OrderResponse order1 = createOrder(1);
-		String reusedKey = UUID.randomUUID().toString();
-		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-1", "0000", "OK", LocalDateTime.now()));
-		PaymentResponse firstOrderPayment = paymentApprovalService.approve(buyer.getId(), order1.getOrderNumber(), reusedKey, new ApprovePaymentRequest("PG-KEY-D", 0L, 10_000L));
-		assertThat(firstOrderPayment.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+	@DisplayName("같은 요청을 같은 주문에 동시에 두 번 보내도 승인은 한 번만 나가고 같은 응답을 재사용한다")
+	void approve_sameRequestRetried_reusesCachedResult() {
+		OrderResponse order = createOrder(1);
+		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-1", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
 
-		OrderResponse order2 = createOrder(1);
+		PaymentResponse first = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-TX-SAME", 0L, 10_000L));
+		PaymentResponse second = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-TX-SAME", 0L, 10_000L));
 
-		assertThatThrownBy(() -> paymentApprovalService.approve(buyer.getId(), order2.getOrderNumber(), reusedKey, new ApprovePaymentRequest("PG-KEY-E", 0L, 10_000L)))
-				.isInstanceOf(CustomException.class)
-				.extracting(e -> ((CustomException) e).getErrorCode())
-				.isEqualTo(CommonErrorCode.IDEMPOTENCY_KEY_MISMATCH);
-
-		Order order2Entity = orderRepository.findByOrderNumber(order2.getOrderNumber()).orElseThrow();
-		assertThat(order2Entity.getStatus()).isEqualTo(OrderStatus.STOCK_RESERVED);
+		assertThat(first.getId()).isEqualTo(second.getId());
+		verify(pgClient, times(1)).approve(any(), any());
 	}
 
 	@Test
@@ -194,13 +191,55 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		OrderResponse order0 = createOrder(1);
 		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
 		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any())).thenThrow(new RuntimeException("connection refused"));
 
 		PaymentResponse response = paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-KEY-F", 0L, 10_000L));
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-F", 0L, 10_000L));
 
 		assertThat(response.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
 		Order order = orderRepository.findById(orderId).orElseThrow();
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+	}
+
+	@Test
+	@DisplayName("PG 호출은 실패해도 즉시 재조회에서 승인이 확인되면 그 자리에서 결제를 완료 처리한다")
+	void approve_ambiguousFailure_confirmedDoneByImmediateInquiry() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any()))
+				.thenReturn(new ApprovalResponse("PG-TX-INQUIRY", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
+
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-INQUIRY-DONE", 0L, 10_000L));
+
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+		Order order = orderRepository.findById(orderId).orElseThrow();
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+
+		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+		assertThat(stock.getSoldQuantity()).isEqualTo(1);
+		assertThat(stock.getReservedQuantity()).isZero();
+	}
+
+	@Test
+	@DisplayName("PG 호출은 실패해도 즉시 재조회에서 명확한 실패가 확인되면 그 자리에서 결제를 실패 처리한다")
+	void approve_ambiguousFailure_confirmedFailedByImmediateInquiry() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any()))
+				.thenReturn(new ApprovalResponse("PG-TX-INQUIRY", "ORDER-TEST", "ABORTED", 10_000L, null));
+
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-INQUIRY-FAILED", 0L, 10_000L));
+
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.FAILED.name());
+		Order order = orderRepository.findById(orderId).orElseThrow();
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+
+		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+		assertThat(stock.getReservedQuantity()).isEqualTo(1);
 	}
 
 	@Test
@@ -209,7 +248,7 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		OrderResponse order0 = createOrder(1);
 
 		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(),
+				buyer.getId(), order0.getOrderNumber(),
 				new ApprovePaymentRequest("PG-KEY-MISMATCH", 0L, 9_999L)))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
@@ -230,13 +269,37 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		paymentStateService.initiate(orderId, UUID.randomUUID().toString(), 10_000L, 0L, "PG-KEY-INFLIGHT", "mock-pg");
 
 		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order0.getOrderNumber(), UUID.randomUUID().toString(),
+				buyer.getId(), order0.getOrderNumber(),
 				new ApprovePaymentRequest("PG-KEY-NEW", 0L, 10_000L)))
 				.isInstanceOf(CustomException.class)
 				.extracting(e -> ((CustomException) e).getErrorCode())
 				.isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_IN_PROGRESS);
 
 		verify(pgClient, never()).approve(any(), any());
+	}
+
+	@Test
+	@DisplayName("결제 승인 시점에 예약이 만료돼 있으면 PG 호출 없이 즉시 거절되고, 재고는 그 자리에서 복구된다(lazy expiration)")
+	void approve_reservationExpired_releasesStockImmediately() {
+		OrderResponse order0 = createOrder(1);
+		Order order = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow();
+		ReflectionTestUtils.setField(order, "expiresAt", LocalDateTime.now().minusMinutes(1));
+		orderRepository.save(order);
+
+		assertThatThrownBy(() -> paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-EXPIRED", 0L, 10_000L)))
+				.isInstanceOf(CustomException.class)
+				.extracting(e -> ((CustomException) e).getErrorCode())
+				.isEqualTo(OrderErrorCode.ORDER_EXPIRED);
+
+		verify(pgClient, never()).approve(any(), any());
+
+		Order persisted = orderRepository.findById(order.getId()).orElseThrow();
+		assertThat(persisted.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+
+		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+		assertThat(stock.getReservedQuantity()).isZero();
+		assertThat(stock.availableQuantity()).isEqualTo(10);
 	}
 
 	private OrderResponse createOrder(int quantity) {
