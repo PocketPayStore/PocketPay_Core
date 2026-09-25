@@ -9,16 +9,11 @@ import org.springframework.stereotype.Component;
 import lombok.RequiredArgsConstructor;
 
 import pocketpaystore.pocketpay_core.common.exception.CustomException;
-import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
+import pocketpaystore.pocketpay_core.common.exception.errorcode.ErrorCode;
 
 @Component
 @RequiredArgsConstructor
 public class IdempotencyKeyGuard {
-
-	private static final String KEY_PREFIX = "idempotency:";
-	private static final String LOCK_PREFIX = KEY_PREFIX + "lock:";
-	private static final String RESULT_PREFIX = KEY_PREFIX + "result:";
-	private static final String LOCKED = "LOCKED";
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -36,48 +31,44 @@ public class IdempotencyKeyGuard {
 
 	public boolean tryAcquire(String namespace, String idempotencyKey) {
 		Boolean acquired = redisTemplate.opsForValue()
-				.setIfAbsent(lockKey(namespace, idempotencyKey), LOCKED, Duration.ofSeconds(lockTtlSeconds));
+				.setIfAbsent(key("lock", namespace, idempotencyKey), "LOCKED", Duration.ofSeconds(lockTtlSeconds));
 		return Boolean.TRUE.equals(acquired);
 	}
 
 	public void release(String namespace, String idempotencyKey) {
-		redisTemplate.delete(lockKey(namespace, idempotencyKey));
+		redisTemplate.delete(key("lock", namespace, idempotencyKey));
 	}
 
 	public String getCachedResult(String namespace, String idempotencyKey) {
-		return redisTemplate.opsForValue().get(resultKey(namespace, idempotencyKey));
+		return redisTemplate.opsForValue().get(key("result", namespace, idempotencyKey));
 	}
 
 	public void cacheResult(String namespace, String idempotencyKey, String json) {
-		redisTemplate.opsForValue().set(resultKey(namespace, idempotencyKey), json, Duration.ofSeconds(resultTtlSeconds));
+		redisTemplate.opsForValue().set(key("result", namespace, idempotencyKey), json, Duration.ofSeconds(resultTtlSeconds));
 	}
 
-	public String waitForCachedResult(String namespace, String idempotencyKey) {
+	public String waitForCachedResult(String namespace, String idempotencyKey, ErrorCode timeoutErrorCode) {
 		long deadline = System.currentTimeMillis() + lockWaitTimeoutMillis;
 		while (System.currentTimeMillis() < deadline) {
 			String json = getCachedResult(namespace, idempotencyKey);
 			if (json != null) {
 				return json;
 			}
-			sleep(lockPollIntervalMillis);
+			sleep(lockPollIntervalMillis, timeoutErrorCode);
 		}
-		throw new CustomException(CommonErrorCode.REQUEST_TIMEOUT);
+		throw new CustomException(timeoutErrorCode);
 	}
 
-	private String lockKey(String namespace, String idempotencyKey) {
-		return LOCK_PREFIX + namespace + ":" + idempotencyKey;
+	private String key(String type, String namespace, String idempotencyKey) {
+		return "idempotency:" + type + ":" + namespace + ":" + idempotencyKey;
 	}
 
-	private String resultKey(String namespace, String idempotencyKey) {
-		return RESULT_PREFIX + namespace + ":" + idempotencyKey;
-	}
-
-	private void sleep(long millis) {
+	private void sleep(long millis, ErrorCode timeoutErrorCode) {
 		try {
 			Thread.sleep(millis);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new CustomException(CommonErrorCode.REQUEST_TIMEOUT);
+			throw new CustomException(timeoutErrorCode);
 		}
 	}
 
