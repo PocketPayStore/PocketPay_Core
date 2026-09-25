@@ -92,12 +92,12 @@ class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 
 		when(paymentStateService.initiate(anyLong(), anyString(), anyLong(), anyLong(), anyString(), anyString()))
 				.thenReturn(1L);
-		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-CRASH", "0000", "OK", LocalDateTime.now()));
+		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-CRASH", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
 		RuntimeException dbFailure = new RuntimeException("DB connection lost");
 		when(paymentStateService.markDone(anyLong(), anyLong())).thenThrow(dbFailure);
 
 		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), UUID.randomUUID().toString(), new ApprovePaymentRequest("PG-TX-CRASH", 0L, 15_000L)))
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-TX-CRASH", 0L, 15_000L)))
 				.isSameAs(dbFailure);
 
 		verify(criticalAlertService).alertPgApprovedButPersistFailed(

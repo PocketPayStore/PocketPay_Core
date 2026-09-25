@@ -9,20 +9,13 @@ import pocketpaystore.pocketpay_core.common.exception.errorcode.OrderErrorCode;
 import pocketpaystore.pocketpay_core.order.domain.OrderItem;
 import pocketpaystore.pocketpay_core.order.repository.OrderItemRepository;
 
+/** 재고 예약은 이 서비스를 거치지 않는다 — {@code OrderCreationService}가 주문 저장과 같은 트랜잭션 안에서 직접 처리한다. */
 @Service
 @RequiredArgsConstructor
 public class StockService {
 
 	private final OrderItemRepository orderItemRepository;
 	private final StockLockingService stockLockingService;
-
-	public void reserve(Long productId, int quantity) {
-		stockLockingService.reserve(productId, quantity);
-	}
-
-	public void releaseReservation(Long productId, int quantity) {
-		stockLockingService.release(productId, quantity);
-	}
 
 	public void confirmForOrder(Long orderId) {
 		OrderItem item = findOrder(orderId);

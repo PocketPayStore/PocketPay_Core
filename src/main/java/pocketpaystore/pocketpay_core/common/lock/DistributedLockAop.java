@@ -25,8 +25,6 @@ import pocketpaystore.pocketpay_core.common.exception.errorcode.CommonErrorCode;
 @RequiredArgsConstructor
 public class DistributedLockAop {
 
-	private static final String REDISSON_LOCK_PREFIX = "lock:";
-
 	private final RedissonClient redissonClient;
 	private final AopForTransaction aopForTransaction;
 
@@ -51,7 +49,7 @@ public class DistributedLockAop {
 		Method method = signature.getMethod();
 		DistributedLock distributedLock = method.getAnnotation(DistributedLock.class);
 
-		String key = REDISSON_LOCK_PREFIX
+		String key = "lock:"
 				+ CustomSpringELParser.getDynamicValue(signature.getParameterNames(), joinPoint.getArgs(), distributedLock.key());
 		RLock rLock = redissonClient.getLock(key);
 

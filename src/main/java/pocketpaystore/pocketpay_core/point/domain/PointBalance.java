@@ -49,14 +49,6 @@ public class PointBalance extends BaseEntity {
 		return this.balance;
 	}
 
-	public Long use(Long amount) {
-		if (this.balance < amount) {
-			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
-		}
-		this.balance -= amount;
-		return this.balance;
-	}
-
 	public void reserve(Long amount) {
 		if (amount <= 0 || availableBalance() < amount) {
 			throw new CustomException(PointErrorCode.INSUFFICIENT_POINT_BALANCE);
