@@ -28,13 +28,15 @@ lock:
 payment:
   point-earn-rate: 0.01
 
+order:
+  reservation-timeout-minutes: 10
+
 pg:
   provider-name: test
-  webhook:
-    secret: test
 
-mock-pg:
+toss:
   base-url: test
+  secret-key: test
 
 payment-events:
   channel: payment:status-changed:test
