@@ -1,14 +1,5 @@
 package pocketpaystore.pocketpay_core.pg.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
-
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import tools.jackson.databind.JsonNode;
@@ -19,53 +10,33 @@ import lombok.extern.slf4j.Slf4j;
 import pocketpaystore.pocketpay_core.pg.domain.PgCallbackLog;
 import pocketpaystore.pocketpay_core.pg.repository.PgCallbackLogRepository;
 
+/**
+ * 토스페이먼츠는 결제 상태 변경 웹훅(PAYMENT_STATUS_CHANGED)엔 서명을 실어 보내지 않는다 —
+ * 서명 헤더(tosspayments-webhook-signature)는 정산 이벤트(payout.changed, seller.changed)에만 붙는다.
+ * 그래서 페이로드 내용을 그대로 신뢰해 상태를 반영하지 않고 기록만 남긴다 — 실제 결제 상태 확정은
+ * 5.1절 재확인 배치가 PG를 직접 조회해서 한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PgWebhookService {
 
-	private static final String HMAC_ALGORITHM = "HmacSHA256";
-
 	private final PgCallbackLogRepository pgCallbackLogRepository;
 	private final ObjectMapper objectMapper;
 
-	@Value("${pg.webhook.secret}")
-	private String webhookSecret;
-
-	public void receive(String rawPayload, String signature) {
-		boolean signatureValid = verifySignature(rawPayload, signature);
-		if (!signatureValid) {
-			log.error("[PgWebhook] 서명 검증 실패, 그래도 기록은 남긴다. signature={}", signature);
-		}
-
-		String pgTransactionId = extractPgTransactionId(rawPayload);
-		PgCallbackLog callbackLog = PgCallbackLog.create(pgTransactionId, rawPayload, signatureValid);
-		pgCallbackLogRepository.save(callbackLog);
+	public void receive(String rawPayload) {
+		String paymentKey = extractPaymentKey(rawPayload);
+		pgCallbackLogRepository.save(PgCallbackLog.create(paymentKey, rawPayload));
 	}
 
-	private boolean verifySignature(String rawPayload, String signature) {
-		if (signature == null || signature.isBlank()) {
-			return false;
-		}
-		try {
-			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-			mac.init(new SecretKeySpec(webhookSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
-			byte[] computed = mac.doFinal(rawPayload.getBytes(StandardCharsets.UTF_8));
-			String computedHex = HexFormat.of().formatHex(computed);
-			return computedHex.equalsIgnoreCase(signature);
-		} catch (NoSuchAlgorithmException | InvalidKeyException e) {
-			log.error("[PgWebhook] 서명 검증 중 오류", e);
-			return false;
-		}
-	}
-
-	private String extractPgTransactionId(String rawPayload) {
+	private String extractPaymentKey(String rawPayload) {
 		try {
 			JsonNode node = objectMapper.readTree(rawPayload);
-			JsonNode txIdNode = node.get("pgTransactionId");
-			return txIdNode == null ? null : txIdNode.asText();
+			JsonNode dataNode = node.get("data");
+			JsonNode paymentKeyNode = dataNode == null ? null : dataNode.get("paymentKey");
+			return paymentKeyNode == null ? null : paymentKeyNode.asText();
 		} catch (Exception e) {
-			log.error("[PgWebhook] payload 파싱 실패, pgTransactionId 없이 기록", e);
+			log.error("[PgWebhook] payload 파싱 실패, paymentKey 없이 기록", e);
 			return null;
 		}
 	}

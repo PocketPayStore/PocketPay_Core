@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 public class ApprovalRequest {
 
 	private String paymentKey;
+	private String orderId;
 	private Long amount;
-	private String orderNumber;
 
 }

@@ -9,9 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CancelRequest {
 
-	private String pgTransactionId;
+	private String cancelReason;
 	private Long cancelAmount;
-	private String reason;
-	private String merchantCancelId;
 
 }

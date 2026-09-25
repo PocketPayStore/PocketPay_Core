@@ -31,20 +31,16 @@ public class PgCallbackLog extends BaseEntity {
 	@Column(nullable = false, columnDefinition = "json")
 	private String payload;
 
-	@Column(name = "signature_valid", nullable = false)
-	private boolean signatureValid;
-
 	@Column(nullable = false)
 	private boolean processed;
 
 	@Column(name = "retry_count", nullable = false)
 	private int retryCount;
 
-	public static PgCallbackLog create(String pgTransactionId, String payload, boolean signatureValid) {
+	public static PgCallbackLog create(String pgTransactionId, String payload) {
 		return PgCallbackLog.builder()
 				.pgTransactionId(pgTransactionId)
 				.payload(payload)
-				.signatureValid(signatureValid)
 				.processed(false)
 				.retryCount(0)
 				.build();
