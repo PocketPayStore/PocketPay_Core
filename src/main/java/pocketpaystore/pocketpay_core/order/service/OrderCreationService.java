@@ -1,7 +1,9 @@
 package pocketpaystore.pocketpay_core.order.service;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +34,9 @@ class OrderCreationService {
 	private final OrderRepository orderRepository;
 	private final OrderItemRepository orderItemRepository;
 
+	@Value("${order.reservation-timeout-minutes}")
+	private long reservationTimeoutMinutes;
+
 	@DistributedLock(key = "'stock:' + #request.productId")
 	public OrderResponse create(Long memberId, CreateOrderRequest request, String idempotencyKey) {
 		Product product = productRepository.findById(request.getProductId())
@@ -39,20 +44,21 @@ class OrderCreationService {
 		long totalAmount = product.getPrice() * request.getQuantity();
 
 		try {
-			return persist(generateOrderNumber(), memberId, totalAmount, idempotencyKey,
+			return reserveStockAndCreateOrder(generateOrderNumber(), memberId, totalAmount, idempotencyKey,
 					request.getProductId(), request.getQuantity(), product.getPrice());
 		} catch (DataIntegrityViolationException e) {
 			throw new CustomException(CommonErrorCode.DUPLICATE_REQUEST);
 		}
 	}
 
-	private OrderResponse persist(String orderNumber, Long memberId, long totalAmount, String idempotencyKey,
+	private OrderResponse reserveStockAndCreateOrder(String orderNumber, Long memberId, long totalAmount, String idempotencyKey,
 			Long productId, int quantity, Long unitPrice) {
 		Stock stock = stockRepository.findByProductId(productId)
 				.orElseThrow(() -> new CustomException(ProductErrorCode.PRODUCT_NOT_FOUND));
 		stock.reserve(quantity);
 
-		Order order = orderRepository.save(Order.create(orderNumber, memberId, totalAmount, idempotencyKey));
+		Order order = orderRepository.save(
+				Order.create(orderNumber, memberId, totalAmount, idempotencyKey, computeExpiresAt()));
 		order.reserveStock();
 
 		OrderItem orderItem = orderItemRepository.save(OrderItem.create(order.getId(), productId, quantity, unitPrice));
@@ -61,6 +67,10 @@ class OrderCreationService {
 
 	private String generateOrderNumber() {
 		return ORDER_NUMBER_PREFIX + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
+	}
+
+	private LocalDateTime computeExpiresAt() {
+		return LocalDateTime.now().plusMinutes(reservationTimeoutMinutes);
 	}
 
 }

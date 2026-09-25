@@ -7,3 +7,6 @@ spring:
   flyway:
     locations: classpath:db/migration
     baseline-on-migrate: true
+
+order:
+  reservation-timeout-minutes: 10
