@@ -14,6 +14,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
 	boolean existsByOrderIdAndStatus(Long orderId, PaymentStatus status);
 
+	Optional<Payment> findTopByOrderIdOrderByCreatedAtDesc(Long orderId);
+
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT p FROM Payment p WHERE p.orderId = :orderId AND p.status IN ('DONE', 'PARTIAL_CANCELED', 'CANCELED')")

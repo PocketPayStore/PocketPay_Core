@@ -302,6 +302,50 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 		assertThat(stock.availableQuantity()).isEqualTo(10);
 	}
 
+	@Test
+	@DisplayName("결제 상태 조회는 가장 최근 결제 시도의 상태를 반환한다")
+	void getStatus_returnsLatestPaymentAttempt() {
+		OrderResponse order0 = createOrder(1);
+		FeignException badRequest = mock(FeignException.class);
+		when(badRequest.status()).thenReturn(400);
+		when(pgClient.approve(any(), any()))
+				.thenThrow(badRequest)
+				.thenReturn(new ApprovalResponse("PG-TX-STATUS", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
+
+		paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-STATUS-1", 0L, 10_000L));
+		paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-STATUS-2", 0L, 10_000L));
+
+		PaymentResponse status = paymentApprovalService.getStatus(buyer.getId(), order0.getOrderNumber());
+
+		assertThat(status.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+	}
+
+	@Test
+	@DisplayName("아직 결제를 시도하지 않은 주문의 상태를 조회하면 PAYMENT_NOT_FOUND를 반환한다")
+	void getStatus_noPaymentYet_throwsNotFound() {
+		OrderResponse order0 = createOrder(1);
+
+		assertThatThrownBy(() -> paymentApprovalService.getStatus(buyer.getId(), order0.getOrderNumber()))
+				.isInstanceOf(CustomException.class)
+				.extracting(e -> ((CustomException) e).getErrorCode())
+				.isEqualTo(PaymentErrorCode.PAYMENT_NOT_FOUND);
+	}
+
+	@Test
+	@DisplayName("다른 회원이 결제 상태를 조회하면 ORDER_NOT_FOUND를 반환한다")
+	void getStatus_notOwner_throwsOrderNotFound() {
+		OrderResponse order0 = createOrder(1);
+		Member stranger = memberRepository.save(
+				Member.builder().email(uniqueEmail()).password("test1234").name("타인").role(MemberRole.USER).build());
+
+		assertThatThrownBy(() -> paymentApprovalService.getStatus(stranger.getId(), order0.getOrderNumber()))
+				.isInstanceOf(CustomException.class)
+				.extracting(e -> ((CustomException) e).getErrorCode())
+				.isEqualTo(OrderErrorCode.ORDER_NOT_FOUND);
+	}
+
 	private OrderResponse createOrder(int quantity) {
 		CreateOrderRequest request = new CreateOrderRequest(productId, quantity);
 		return orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString());

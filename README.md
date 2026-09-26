@@ -67,6 +67,7 @@ flowchart LR
 | POST | /api/auth/login | 로그인 및 JWT 발급 |
 | POST | /api/orders | 주문 생성과 재고 예약 |
 | POST | /api/payments/{orderNumber} | 결제 승인 |
+| GET | /api/payments/{orderNumber} | 결제 상태 조회 |
 | POST | /api/payments/{orderNumber}/refund | 부분·전체 환불 |
 | POST | /api/webhooks/pg | PG Webhook 수신 |
 

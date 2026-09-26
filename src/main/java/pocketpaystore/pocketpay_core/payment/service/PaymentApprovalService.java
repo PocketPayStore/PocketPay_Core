@@ -3,6 +3,7 @@ package pocketpaystore.pocketpay_core.payment.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import feign.FeignException;
 
@@ -23,6 +24,7 @@ import pocketpaystore.pocketpay_core.payment.domain.Payment;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
+import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
 import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
@@ -36,6 +38,7 @@ public class PaymentApprovalService {
 	private static final String IDEMPOTENCY_NAMESPACE = "payment";
 
 	private final OrderRepository orderRepository;
+	private final PaymentRepository paymentRepository;
 	private final PaymentStateService paymentStateService;
 	private final PgClient pgClient;
 	private final IdempotencyKeyGuard idempotencyKeyGuard;
@@ -69,6 +72,18 @@ public class PaymentApprovalService {
 		} finally {
 			idempotencyKeyGuard.release(IDEMPOTENCY_NAMESPACE, idempotencyKey);
 		}
+	}
+
+	@Transactional(readOnly = true)
+	public PaymentResponse getStatus(Long memberId, String orderNumber) {
+		Order order = orderRepository.findByOrderNumber(orderNumber)
+				.orElseThrow(() -> new CustomException(OrderErrorCode.ORDER_NOT_FOUND));
+		if (!order.getMemberId().equals(memberId)) {
+			throw new CustomException(OrderErrorCode.ORDER_NOT_FOUND);
+		}
+		Payment payment = paymentRepository.findTopByOrderIdOrderByCreatedAtDesc(order.getId())
+				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
+		return PaymentResponse.from(payment, orderNumber);
 	}
 
 	private boolean isCacheableOutcome(PaymentResponse response) {

@@ -2,6 +2,7 @@ package pocketpaystore.pocketpay_core.payment.controller;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,6 +36,15 @@ public class PaymentController {
 			@Valid @RequestBody ApprovePaymentRequest request
 	) {
 		PaymentResponse response = paymentApprovalService.approve(loginMember.getMemberId(), orderNumber, request);
+		return ResponseEntity.ok(ApiResponse.ok(response));
+	}
+
+	@GetMapping("/{orderNumber}")
+	public ResponseEntity<ApiResponse<PaymentResponse>> getStatus(
+			@AuthMember LoginMember loginMember,
+			@PathVariable String orderNumber
+	) {
+		PaymentResponse response = paymentApprovalService.getStatus(loginMember.getMemberId(), orderNumber);
 		return ResponseEntity.ok(ApiResponse.ok(response));
 	}
 
