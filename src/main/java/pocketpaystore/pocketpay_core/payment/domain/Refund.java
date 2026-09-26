@@ -40,6 +40,9 @@ public class Refund extends BaseEntity {
 	@Column(nullable = false, length = 20)
 	private RefundStatus status;
 
+	@Column(name = "pg_cancel_confirmed", nullable = false)
+	private boolean pgCancelConfirmed;
+
 	@Column(name = "idempotency_key", nullable = false, unique = true, length = 100)
 	private String idempotencyKey;
 
@@ -68,6 +71,10 @@ public class Refund extends BaseEntity {
 		validateTransition(RefundStatus.PROCESSING);
 		this.status = RefundStatus.COMPLETED;
 		this.processedAt = LocalDateTime.now();
+	}
+
+	public void markPgCancelConfirmed() {
+		this.pgCancelConfirmed = true;
 	}
 
 	public void toFailed() {

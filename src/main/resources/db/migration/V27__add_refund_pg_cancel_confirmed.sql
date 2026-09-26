@@ -1,0 +1,2 @@
+ALTER TABLE refund
+    ADD COLUMN pg_cancel_confirmed BOOLEAN NOT NULL DEFAULT FALSE AFTER status;

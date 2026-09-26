@@ -83,11 +83,14 @@ public class PaymentRefundStateService {
 	}
 
 	@Transactional
-	public Refund complete(Long paymentId, Long refundId, Long refundAmount, String reason) {
+	public Refund complete(Long paymentId, Long refundId, Long refundAmount, String reason, boolean pgCancelConfirmed) {
 		paymentCancelRepository.save(PaymentCancel.create(paymentId, refundId, refundAmount, reason));
 		Refund refund = refundRepository.findById(refundId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 		refund.toCompleted();
+		if (pgCancelConfirmed) {
+			refund.markPgCancelConfirmed();
+		}
 		return refund;
 	}
 

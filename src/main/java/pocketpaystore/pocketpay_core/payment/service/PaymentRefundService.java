@@ -71,19 +71,21 @@ public class PaymentRefundService {
 		Payment payment = prepared.getPayment();
 		Refund refund = prepared.getRefund();
 
-		tryCancelPg(payment, refund.getRequestAmount(), idempotencyKey);
+		boolean pgCancelConfirmed = tryCancelPg(payment, refund.getRequestAmount(), idempotencyKey);
 
 		Refund completedRefund = refundStateService.complete(
-				payment.getId(), refund.getId(), refund.getRequestAmount(), request.getReason());
+				payment.getId(), refund.getId(), refund.getRequestAmount(), request.getReason(), pgCancelConfirmed);
 
 		return RefundResponse.of(completedRefund, payment);
 	}
 
-	private void tryCancelPg(Payment payment, Long cancelAmount, String idempotencyKey) {
+	private boolean tryCancelPg(Payment payment, Long cancelAmount, String idempotencyKey) {
 		try {
 			pgClient.cancel(payment.getPgTransactionId(), idempotencyKey, new CancelRequest(CANCEL_REASON, cancelAmount));
+			return true;
 		} catch (Exception e) {
-			log.error("[Refund] PG 취소 호출 실패 (best-effort, 로컬 상태는 그대로 반영): paymentId={}", payment.getId(), e);
+			log.error("[Refund] PG 취소 호출 실패 (best-effort, 로컬 상태는 그대로 반영, 배치가 재시도): paymentId={}", payment.getId(), e);
+			return false;
 		}
 	}
 
