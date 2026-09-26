@@ -22,7 +22,7 @@ class StockLockingService {
 	}
 
 	private Stock findStock(Long productId) {
-		return stockRepository.findByProductId(productId)
+		return stockRepository.findByProductIdWithLock(productId)
 				.orElseThrow(() -> new CustomException(ProductErrorCode.PRODUCT_NOT_FOUND));
 	}
 

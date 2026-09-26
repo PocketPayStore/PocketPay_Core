@@ -18,7 +18,7 @@ public class StockRestorationService {
 
 	@DistributedLock(key = "'stock:' + #productId")
 	public void restore(Long productId, int quantity) {
-		Stock stock = stockRepository.findByProductId(productId)
+		Stock stock = stockRepository.findByProductIdWithLock(productId)
 				.orElseThrow(() -> new CustomException(ProductErrorCode.PRODUCT_NOT_FOUND));
 		stock.release(quantity);
 	}

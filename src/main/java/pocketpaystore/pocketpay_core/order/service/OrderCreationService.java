@@ -53,7 +53,7 @@ class OrderCreationService {
 
 	private OrderResponse reserveStockAndCreateOrder(String orderNumber, Long memberId, long totalAmount, String idempotencyKey,
 			Long productId, int quantity, Long unitPrice) {
-		Stock stock = stockRepository.findByProductId(productId)
+		Stock stock = stockRepository.findByProductIdWithLock(productId)
 				.orElseThrow(() -> new CustomException(ProductErrorCode.PRODUCT_NOT_FOUND));
 		stock.reserve(quantity);
 
