@@ -41,6 +41,9 @@ toss:
 payment-events:
   channel: payment:status-changed:test
 
+admin-alerts:
+  channel: admin:critical-alert:test
+
 
 resilience4j:
   retry:
