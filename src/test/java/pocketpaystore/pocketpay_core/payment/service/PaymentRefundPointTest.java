@@ -100,7 +100,7 @@ class PaymentRefundPointTest extends RedisTestContainer {
 		Long logId = savePointEarnLog(buyer.getId(), order.getId(), payment.getId(), PointEarnStatus.RESOLVED);
 
 		paymentRefundService.refund(buyer.getId(), order.getOrderNumber(),
-				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"));
+				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"), UUID.randomUUID().toString());
 
 		Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
 		assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.CANCELED);
@@ -134,7 +134,7 @@ class PaymentRefundPointTest extends RedisTestContainer {
 
 		int halfQuantity = TOTAL_QUANTITY / 2;
 		paymentRefundService.refund(buyer.getId(), order.getOrderNumber(),
-				new CreateRefundRequest(halfQuantity, "부분 환불"));
+				new CreateRefundRequest(halfQuantity, "부분 환불"), UUID.randomUUID().toString());
 
 		Payment refundedPayment = paymentRepository.findById(payment.getId()).orElseThrow();
 		assertThat(refundedPayment.getStatus()).isEqualTo(PaymentStatus.PARTIAL_CANCELED);

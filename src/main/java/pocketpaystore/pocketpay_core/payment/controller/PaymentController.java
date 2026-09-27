@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,10 +52,11 @@ public class PaymentController {
 	@PostMapping("/{orderNumber}/refund")
 	public ResponseEntity<ApiResponse<RefundResponse>> refund(
 			@AuthMember LoginMember loginMember,
+			@RequestHeader("Idempotency-Key") String idempotencyKey,
 			@PathVariable String orderNumber,
 			@Valid @RequestBody CreateRefundRequest request
 	) {
-		RefundResponse response = paymentRefundService.refund(loginMember.getMemberId(), orderNumber, request);
+		RefundResponse response = paymentRefundService.refund(loginMember.getMemberId(), orderNumber, request, idempotencyKey);
 		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created(response));
 	}
 }

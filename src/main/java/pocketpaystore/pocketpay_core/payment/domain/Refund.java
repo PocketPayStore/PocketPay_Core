@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -20,7 +21,8 @@ import pocketpaystore.pocketpay_core.common.exception.errorcode.PaymentErrorCode
 
 @Getter
 @Entity
-@Table(name = "refund")
+@Table(name = "refund", uniqueConstraints =
+		@UniqueConstraint(name = "uk_refund_payment_idempotency_key", columnNames = {"payment_id", "idempotency_key"}))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Builder
@@ -43,7 +45,7 @@ public class Refund extends BaseEntity {
 	@Column(name = "pg_cancel_confirmed", nullable = false)
 	private boolean pgCancelConfirmed;
 
-	@Column(name = "idempotency_key", nullable = false, unique = true, length = 100)
+	@Column(name = "idempotency_key", nullable = false, length = 100)
 	private String idempotencyKey;
 
 	@Column(name = "requested_at", nullable = false)

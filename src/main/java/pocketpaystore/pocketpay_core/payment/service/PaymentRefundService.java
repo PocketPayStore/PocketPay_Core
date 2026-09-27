@@ -1,7 +1,5 @@
 package pocketpaystore.pocketpay_core.payment.service;
 
-import java.time.Instant;
-
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -21,6 +19,7 @@ import pocketpaystore.pocketpay_core.payment.dto.response.PreparedRefund;
 import pocketpaystore.pocketpay_core.payment.dto.response.RefundResponse;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.request.CancelRequest;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 
 @Slf4j
 @Service
@@ -29,7 +28,6 @@ public class PaymentRefundService {
 
 	private static final String IDEMPOTENCY_NAMESPACE = "refund";
 	private static final String CANCEL_REASON = "REFUND";
-	private static final int RETRY_WINDOW_SECONDS = 5;
 
 	private final OrderRepository orderRepository;
 	private final PaymentRefundStateService refundStateService;
@@ -37,26 +35,26 @@ public class PaymentRefundService {
 	private final IdempotencyKeyGuard idempotencyKeyGuard;
 	private final ObjectMapper objectMapper;
 
-	public RefundResponse refund(Long memberId, String orderNumber, CreateRefundRequest request) {
-		String idempotencyKey = generateIdempotencyKey(orderNumber, request.getQuantity(), request.getReason());
+	public RefundResponse refund(Long memberId, String orderNumber, CreateRefundRequest request, String idempotencyKey) {
+		String namespace = buildNamespace(memberId, orderNumber);
 
-		RefundResponse cached = readCachedResult(idempotencyKey);
+		RefundResponse cached = readCachedResult(namespace, idempotencyKey);
 		if (cached != null) {
 			return cached;
 		}
 
-		if (!idempotencyKeyGuard.tryAcquire(IDEMPOTENCY_NAMESPACE, idempotencyKey)) {
+		if (!idempotencyKeyGuard.tryAcquire(namespace, idempotencyKey)) {
 			String json = idempotencyKeyGuard.waitForCachedResult(
-					IDEMPOTENCY_NAMESPACE, idempotencyKey, PaymentErrorCode.REFUND_TIMEOUT);
+					namespace, idempotencyKey, PaymentErrorCode.REFUND_TIMEOUT);
 			return deserializeOrThrow(idempotencyKey, json);
 		}
 
 		try {
 			RefundResponse response = doRefund(memberId, orderNumber, idempotencyKey, request);
-			cacheResult(idempotencyKey, response);
+			cacheResult(namespace, idempotencyKey, response);
 			return response;
 		} finally {
-			idempotencyKeyGuard.release(IDEMPOTENCY_NAMESPACE, idempotencyKey);
+			idempotencyKeyGuard.release(namespace, idempotencyKey);
 		}
 	}
 
@@ -84,13 +82,32 @@ public class PaymentRefundService {
 			pgClient.cancel(payment.getPgTransactionId(), idempotencyKey, new CancelRequest(CANCEL_REASON, cancelAmount));
 			return true;
 		} catch (Exception e) {
-			log.error("[Refund] PG 취소 호출 실패 (best-effort, 로컬 상태는 그대로 반영, 배치가 재시도): paymentId={}", payment.getId(), e);
+			log.error("[Refund] PG 취소 호출 실패, 즉시 재조회 시도: paymentId={}", payment.getId(), e);
+			return resolveCancelByImmediateInquiry(payment);
+		}
+	}
+
+	private boolean resolveCancelByImmediateInquiry(Payment payment) {
+		try {
+			ApprovalResponse inquiry = pgClient.inquire(payment.getPgTransactionId());
+			if (isCanceledStatus(inquiry.getStatus())) {
+				log.info("[Refund] 즉시 재조회로 PG 취소 확인: paymentId={}", payment.getId());
+				return true;
+			}
+			log.error("[Refund] 즉시 재조회로도 PG 취소 미확인({}), 배치가 재시도: paymentId={}", inquiry.getStatus(), payment.getId());
+			return false;
+		} catch (Exception e) {
+			log.error("[Refund] 즉시 재조회 실패, 배치가 재시도: paymentId={}", payment.getId(), e);
 			return false;
 		}
 	}
 
-	private RefundResponse readCachedResult(String idempotencyKey) {
-		String json = idempotencyKeyGuard.getCachedResult(IDEMPOTENCY_NAMESPACE, idempotencyKey);
+	private boolean isCanceledStatus(String status) {
+		return "CANCELED".equals(status) || "PARTIAL_CANCELED".equals(status);
+	}
+
+	private RefundResponse readCachedResult(String namespace, String idempotencyKey) {
+		String json = idempotencyKeyGuard.getCachedResult(namespace, idempotencyKey);
 		if (json == null) {
 			return null;
 		}
@@ -111,17 +128,16 @@ public class PaymentRefundService {
 		}
 	}
 
-	private void cacheResult(String idempotencyKey, RefundResponse response) {
+	private void cacheResult(String namespace, String idempotencyKey, RefundResponse response) {
 		try {
-			idempotencyKeyGuard.cacheResult(IDEMPOTENCY_NAMESPACE, idempotencyKey, objectMapper.writeValueAsString(response));
+			idempotencyKeyGuard.cacheResult(namespace, idempotencyKey, objectMapper.writeValueAsString(response));
 		} catch (Exception e) {
 			log.error("[Refund] 응답 캐싱 실패: idempotencyKey={}", idempotencyKey, e);
 		}
 	}
 
-	private String generateIdempotencyKey(String orderNumber, int quantity, String reason) {
-		long retryWindowBucket = Instant.now().getEpochSecond() / RETRY_WINDOW_SECONDS;
-		return "refund:" + orderNumber + ":" + quantity + ":" + (reason == null ? "" : reason) + ":" + retryWindowBucket;
+	private String buildNamespace(Long memberId, String orderNumber) {
+		return IDEMPOTENCY_NAMESPACE + ":" + memberId + ":" + orderNumber;
 	}
 
 }

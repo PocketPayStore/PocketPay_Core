@@ -116,14 +116,12 @@ class PaymentRefundConcurrencyTest extends RedisTestContainer {
 		AtomicInteger unexpectedFailureCount = new AtomicInteger();
 
 		for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
-			// reason에 인덱스를 넣어 서로 다른 멱등키를 갖게 한다 — 여기서 검증하려는 건
-			// "동시에 들어온 서로 다른 정당한 환불 요청들이 환불 가능 금액 한도를 넘지 않는가"이지,
-			// 같은 내용의 중복 제출(멱등키 dedup의 역할) 검증이 아니다.
 			CreateRefundRequest request = new CreateRefundRequest(QUANTITY_PER_REQUEST, "단순 변심 " + i);
+			String idempotencyKey = UUID.randomUUID().toString();
 			executor.submit(() -> {
 				try {
 					startLatch.await();
-					paymentRefundService.refund(buyer.getId(), orderNumber, request);
+					paymentRefundService.refund(buyer.getId(), orderNumber, request, idempotencyKey);
 					successCount.incrementAndGet();
 				} catch (CustomException e) {
 					if (e.getErrorCode() == PaymentErrorCode.EXCESSIVE_REFUND_AMOUNT) {

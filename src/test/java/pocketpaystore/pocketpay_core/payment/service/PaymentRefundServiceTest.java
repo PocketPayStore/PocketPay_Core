@@ -28,6 +28,7 @@ import pocketpaystore.pocketpay_core.payment.dto.response.RefundResponse;
 import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.payment.repository.RefundRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
+import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.pg.dto.response.CancelResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
 import pocketpaystore.pocketpay_core.product.repository.ProductRepository;
@@ -78,7 +79,7 @@ class PaymentRefundServiceTest extends RedisTestContainer {
 		savePayment(order.getId());
 
 		RefundResponse response = paymentRefundService.refund(buyer.getId(), order.getOrderNumber(),
-				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"));
+				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"), UUID.randomUUID().toString());
 
 		Refund refund = refundRepository.findById(response.getRefundId()).orElseThrow();
 		assertThat(refund.getStatus()).isEqualTo(RefundStatus.COMPLETED);
@@ -94,11 +95,29 @@ class PaymentRefundServiceTest extends RedisTestContainer {
 		savePayment(order.getId());
 
 		RefundResponse response = paymentRefundService.refund(buyer.getId(), order.getOrderNumber(),
-				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"));
+				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"), UUID.randomUUID().toString());
 
 		Refund refund = refundRepository.findById(response.getRefundId()).orElseThrow();
 		assertThat(refund.getStatus()).isEqualTo(RefundStatus.COMPLETED);
 		assertThat(refund.isPgCancelConfirmed()).isFalse();
+	}
+
+	@Test
+	void refund_pgCancelCallFails_butImmediateInquiryConfirmsCancellation_marksPgCancelConfirmed() {
+		when(pgClient.cancel(any(), any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any()))
+				.thenReturn(new ApprovalResponse("PG-TX-REFUND", "ORDER-TEST", "CANCELED", 0L, LocalDateTime.now()));
+
+		Member buyer = saveBuyer();
+		Order order = saveOrderWithItem(buyer.getId());
+		savePayment(order.getId());
+
+		RefundResponse response = paymentRefundService.refund(buyer.getId(), order.getOrderNumber(),
+				new CreateRefundRequest(TOTAL_QUANTITY, "전체 환불"), UUID.randomUUID().toString());
+
+		Refund refund = refundRepository.findById(response.getRefundId()).orElseThrow();
+		assertThat(refund.getStatus()).isEqualTo(RefundStatus.COMPLETED);
+		assertThat(refund.isPgCancelConfirmed()).isTrue();
 	}
 
 	private Member saveBuyer() {
