@@ -125,8 +125,7 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	void approve_pgUserFault() {
 		OrderResponse order0 = createOrder(1);
 		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
-		FeignException badRequest = mock(FeignException.class);
-		when(badRequest.status()).thenReturn(400);
+		FeignException badRequest = mockCustomerFaultRejection();
 		when(pgClient.approve(any(), any())).thenThrow(badRequest);
 
 		PaymentResponse response = paymentApprovalService.approve(
@@ -142,12 +141,32 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	}
 
 	@Test
+	@DisplayName("PG가 4xx를 반환해도 고객 귀책 코드가 아니면(PROVIDER_ERROR 등) 즉시 실패시키지 않고 재조회로 확인한다")
+	void approve_pgRejection_notCustomerFaultCode_resolvesByImmediateInquiry() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		FeignException systemSideRejection = mock(FeignException.class);
+		when(systemSideRejection.status()).thenReturn(400);
+		when(systemSideRejection.contentUTF8())
+				.thenReturn("{\"code\":\"PROVIDER_ERROR\",\"message\":\"일시적인 오류가 발생했습니다.\"}");
+		when(pgClient.approve(any(), any())).thenThrow(systemSideRejection);
+		when(pgClient.inquire(any()))
+				.thenReturn(new ApprovalResponse("PG-TX-PROVIDER-ERROR", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
+
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-PROVIDER-ERROR", 0L, 10_000L));
+
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+		Order order = orderRepository.findById(orderId).orElseThrow();
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+	}
+
+	@Test
 	@DisplayName("첫 결제수단이 거절돼도 같은 주문에 새 Idempotency-Key로 재시도하면 승인될 수 있다")
 	void approve_retryAfterUserFault_succeeds() {
 		OrderResponse order0 = createOrder(1);
 		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
-		FeignException badRequest = mock(FeignException.class);
-		when(badRequest.status()).thenReturn(400);
+		FeignException badRequest = mockCustomerFaultRejection();
 		when(pgClient.approve(any(), any()))
 				.thenThrow(badRequest)
 				.thenReturn(new ApprovalResponse("PG-TX-RETRY", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
@@ -306,8 +325,7 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	@DisplayName("결제 상태 조회는 가장 최근 결제 시도의 상태를 반환한다")
 	void getStatus_returnsLatestPaymentAttempt() {
 		OrderResponse order0 = createOrder(1);
-		FeignException badRequest = mock(FeignException.class);
-		when(badRequest.status()).thenReturn(400);
+		FeignException badRequest = mockCustomerFaultRejection();
 		when(pgClient.approve(any(), any()))
 				.thenThrow(badRequest)
 				.thenReturn(new ApprovalResponse("PG-TX-STATUS", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
@@ -349,6 +367,13 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 	private OrderResponse createOrder(int quantity) {
 		CreateOrderRequest request = new CreateOrderRequest(productId, quantity);
 		return orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString());
+	}
+
+	private FeignException mockCustomerFaultRejection() {
+		FeignException rejection = mock(FeignException.class);
+		when(rejection.status()).thenReturn(400);
+		when(rejection.contentUTF8()).thenReturn("{\"code\":\"REJECT_CARD_COMPANY\",\"message\":\"카드사에서 결제 승인을 거절했습니다.\"}");
+		return rejection;
 	}
 
 	private String uniqueEmail() {

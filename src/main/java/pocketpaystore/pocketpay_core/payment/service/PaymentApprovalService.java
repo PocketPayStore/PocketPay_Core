@@ -28,6 +28,8 @@ import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.request.ApprovalRequest;
 import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
+import pocketpaystore.pocketpay_core.pg.dto.response.TossErrorResponse;
+import pocketpaystore.pocketpay_core.pg.errorcode.TossErrorCode;
 import pocketpaystore.pocketpay_core.point.repository.PointBalanceRepository;
 
 @Slf4j
@@ -152,13 +154,15 @@ public class PaymentApprovalService {
 		try {
 			pgClient.approve(idempotencyKey, new ApprovalRequest(paymentKey, order.getOrderNumber(), pgAmount));
 		} catch (FeignException e) {
-			if (isUserFault(e)) {
-				log.info("[Payment] PG 승인 거절(유저 귀책, 재시도 없이 즉시 실패): orderId={}, status={}", order.getId(), e.status());
-				Payment payment = paymentStateService.markPaymentFailed(
-						paymentId, String.valueOf(e.status()), e.contentUTF8());
+			String errorCode = extractTossErrorCode(e);
+			if (TossErrorCode.isCustomerFault(errorCode)) {
+				log.info("[Payment] PG 승인 거절(고객 귀책, 재시도 없이 즉시 실패): orderId={}, status={}, code={}",
+						order.getId(), e.status(), errorCode);
+				Payment payment = paymentStateService.markPaymentFailed(paymentId, errorCode, e.contentUTF8());
 				return PaymentResponse.from(payment, orderNumber);
 			}
-			log.error("[Payment] PG 승인 재시도 소진(시스템 장애), 즉시 재조회 시도: orderId={}", order.getId(), e);
+			log.error("[Payment] PG 승인 실패(고객 귀책 아님), 즉시 재조회 시도: orderId={}, status={}, code={}",
+					order.getId(), e.status(), errorCode, e);
 			return resolveAfterApprovalUncertain(paymentId, order, orderNumber, paymentKey, pgAmount);
 		} catch (Exception e) {
 			log.error("[Payment] PG 승인 호출 실패(네트워크, 재시도 소진), 즉시 재조회 시도: orderId={}", order.getId(), e);
@@ -226,8 +230,13 @@ public class PaymentApprovalService {
 		}
 	}
 
-	private boolean isUserFault(FeignException e) {
-		return e.status() >= 400 && e.status() < 500;
+	private String extractTossErrorCode(FeignException e) {
+		try {
+			return objectMapper.readValue(e.contentUTF8(), TossErrorResponse.class).getCode();
+		} catch (Exception parseError) {
+			log.error("[Payment] PG 에러 응답 바디 파싱 실패, 고객 귀책 아님으로 취급: body={}", e.contentUTF8(), parseError);
+			return null;
+		}
 	}
 
 	private String generateIdempotencyKey(String orderNumber, String paymentKey) {

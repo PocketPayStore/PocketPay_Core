@@ -174,6 +174,7 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 		OrderResponse order = createOrder(1);
 		FeignException badRequest = mock(FeignException.class);
 		when(badRequest.status()).thenReturn(400);
+		when(badRequest.contentUTF8()).thenReturn("{\"code\":\"REJECT_CARD_COMPANY\",\"message\":\"카드사에서 결제 승인을 거절했습니다.\"}");
 		when(pgClient.approve(any(), any())).thenThrow(badRequest);
 
 		PaymentResponse response = paymentApprovalService.approve(
