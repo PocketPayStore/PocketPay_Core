@@ -19,12 +19,6 @@ public class PointEarnRequestedEventListener {
 
 	private final PointEarnAsyncService pointEarnAsyncService;
 
-	/**
-	 * pointEarnTaskExecutor의 큐·풀이 모두 꽉 차면 executor.execute()가 (호출한 이 스레드에서)
-	 * RejectedExecutionException을 즉시 던진다 — applyAsync() 내부까지 도달하지 못하므로 그 안의
-	 * markFailed() catch로는 못 잡는다. 여기서 잡지 않아도 point_earn_log는 PENDING으로 남아
-	 * Batch의 pointEarnRetryJob이 결국 처리하지만, 원인을 바로 알아볼 수 있도록 명확히 로그를 남긴다.
-	 */
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void onPointEarnRequested(PointEarnRequestedEvent event) {
 		try {
