@@ -1,5 +1,6 @@
 package pocketpaystore.pocketpay_core.payment.repository;
 
+import java.util.Collection;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,10 +13,15 @@ import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-	boolean existsByOrderIdAndStatus(Long orderId, PaymentStatus status);
+	boolean existsByOrderIdAndStatusIn(Long orderId, Collection<PaymentStatus> statuses);
+
+	Optional<Payment> findFirstByOrderIdAndStatus(Long orderId, PaymentStatus status);
 
 	Optional<Payment> findTopByOrderIdOrderByCreatedAtDesc(Long orderId);
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT p FROM Payment p WHERE p.id = :id")
+	Optional<Payment> findByIdWithLock(Long id);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT p FROM Payment p WHERE p.orderId = :orderId AND p.status IN ('DONE', 'PARTIAL_CANCELED', 'CANCELED')")

@@ -130,6 +130,15 @@ public class PaymentApprovalService {
 		if (!order.getMemberId().equals(memberId)) {
 			throw new CustomException(OrderErrorCode.ORDER_NOT_FOUND);
 		}
+
+		Payment unresolved = paymentRepository.findFirstByOrderIdAndStatus(order.getId(), PaymentStatus.TIMEOUT_UNKNOWN)
+				.map(payment -> resolveUnknownBeforeNewAttempt(payment, order))
+				.orElse(null);
+		if (unresolved != null && (unresolved.getStatus() != PaymentStatus.FAILED
+				|| unresolved.getIdempotencyKey().equals(idempotencyKey))) {
+			return PaymentResponse.from(unresolved, orderNumber);
+		}
+
 		validateUsePointAmount(memberId, usePointAmount, order.getTotalAmount());
 		long pgAmount = order.getTotalAmount() - usePointAmount;
 		if (pgAmount != authorizedAmount) {
@@ -199,6 +208,37 @@ public class PaymentApprovalService {
 		return PaymentResponse.from(payment, orderNumber);
 	}
 
+	private Payment resolveUnknownBeforeNewAttempt(Payment payment, Order order) {
+		ApprovalResponse inquiry;
+		try {
+			inquiry = pgClient.inquire(payment.getPgTransactionId());
+		} catch (Exception e) {
+			log.error("[Payment] 재요청 시 TIMEOUT_UNKNOWN 결제 재조회 실패, 새 결제 시도 차단: orderId={}, paymentId={}",
+					order.getId(), payment.getId(), e);
+			return payment;
+		}
+
+		if ("DONE".equals(inquiry.getStatus())) {
+			log.info("[Payment] 재요청 시 재조회로 이전 결제 승인 확인, 결제 완료 처리: orderId={}, paymentId={}",
+					order.getId(), payment.getId());
+			try {
+				return paymentStateService.markDone(payment.getId(), order.getId());
+			} catch (Exception e) {
+				log.error("[Payment] 재요청 시 결제 완료 처리 실패, TIMEOUT_UNKNOWN 유지: orderId={}, paymentId={}",
+						order.getId(), payment.getId(), e);
+				return payment;
+			}
+		}
+		if (isDefinitiveFailure(inquiry.getStatus())) {
+			log.info("[Payment] 재요청 시 재조회로 이전 결제 실패 확인: orderId={}, paymentId={}, status={}",
+					order.getId(), payment.getId(), inquiry.getStatus());
+			return paymentStateService.markPaymentFailed(payment.getId(), inquiry.getStatus(), "재요청 시 재조회로 실패 확인");
+		}
+		log.info("[Payment] 재요청 시 재조회 결과 불명확({}), 새 결제 시도 차단: orderId={}, paymentId={}",
+				inquiry.getStatus(), order.getId(), payment.getId());
+		return payment;
+	}
+
 	private PaymentResponse completeOrFallback(Long paymentId, Order order, String orderNumber,
 			String paymentKey, long pgAmount) {
 		Payment payment;
@@ -207,8 +247,7 @@ public class PaymentApprovalService {
 		} catch (Exception e) {
 			criticalAlertService.alertPgApprovedButPersistFailed(
 					order.getId(), paymentId, paymentKey, pgAmount, e);
-			paymentStateService.markTimeoutUnknown(paymentId);
-			throw e;
+			payment = paymentStateService.markTimeoutUnknown(paymentId);
 		}
 		return PaymentResponse.from(payment, orderNumber);
 	}

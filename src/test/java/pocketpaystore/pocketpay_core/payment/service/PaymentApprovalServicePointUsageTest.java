@@ -249,9 +249,9 @@ class PaymentApprovalServicePointUsageTest extends RedisTestContainer {
 				.thenReturn(new ApprovalResponse("PG-TX-ROLLBACK", "ORDER-TEST", "DONE", 7_000L, LocalDateTime.now()));
 		doThrow(new RuntimeException("재고 확정 실패")).when(stockService).confirmForOrder(any());
 
-		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-ROLLBACK", 3_000L, 7_000L)))
-				.isInstanceOf(RuntimeException.class);
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-ROLLBACK", 3_000L, 7_000L));
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
 
 		Payment payment = paymentRepository.findAll().stream()
 				.filter(p -> p.getOrderId().equals(orderId))

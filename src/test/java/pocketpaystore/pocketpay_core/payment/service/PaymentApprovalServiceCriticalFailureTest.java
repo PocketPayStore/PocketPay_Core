@@ -1,6 +1,6 @@
 package pocketpaystore.pocketpay_core.payment.service;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -25,7 +25,11 @@ import pocketpaystore.pocketpay_core.order.dto.request.CreateOrderRequest;
 import pocketpaystore.pocketpay_core.order.dto.response.OrderResponse;
 import pocketpaystore.pocketpay_core.order.repository.OrderRepository;
 import pocketpaystore.pocketpay_core.order.service.OrderService;
+import pocketpaystore.pocketpay_core.payment.domain.Payment;
+import pocketpaystore.pocketpay_core.payment.domain.PaymentMethod;
+import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
+import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.product.domain.Product;
@@ -84,8 +88,8 @@ class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 	}
 
 	@Test
-	@DisplayName("PG 승인은 성공했는데 결제 상태 저장이 실패하면 CriticalAlertService로 알리고 예외를 그대로 전파한다")
-	void approve_pgSucceedsButPersistFails_alertsAndPropagates() {
+	@DisplayName("PG 승인은 성공했는데 결제 상태 저장이 실패하면 CriticalAlertService로 알리고 500 대신 TIMEOUT_UNKNOWN으로 응답한다")
+	void approve_pgSucceedsButPersistFails_alertsAndRespondsTimeoutUnknown() {
 		CreateOrderRequest request = new CreateOrderRequest(productId, 1);
 		OrderResponse order = orderService.createOrder(buyer.getId(), request, UUID.randomUUID().toString());
 		Long orderId = orderRepository.findByOrderNumber(order.getOrderNumber()).orElseThrow().getId();
@@ -95,13 +99,22 @@ class PaymentApprovalServiceCriticalFailureTest extends RedisTestContainer {
 		when(pgClient.approve(any(), any())).thenReturn(new ApprovalResponse("PG-TX-CRASH", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
 		RuntimeException dbFailure = new RuntimeException("DB connection lost");
 		when(paymentStateService.markDone(anyLong(), anyLong())).thenThrow(dbFailure);
+		when(paymentStateService.markTimeoutUnknown(1L)).thenReturn(timeoutUnknownPayment(orderId));
 
-		assertThatThrownBy(() -> paymentApprovalService.approve(
-				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-TX-CRASH", 0L, 15_000L)))
-				.isSameAs(dbFailure);
+		PaymentResponse response = paymentApprovalService.approve(
+				buyer.getId(), order.getOrderNumber(), new ApprovePaymentRequest("PG-TX-CRASH", 0L, 15_000L));
 
+		assertThat(response.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
 		verify(criticalAlertService).alertPgApprovedButPersistFailed(
 				orderId, 1L, "PG-TX-CRASH", order.getTotalAmount(), dbFailure);
+		verify(paymentStateService).markTimeoutUnknown(1L);
+	}
+
+	private Payment timeoutUnknownPayment(Long orderId) {
+		Payment payment = Payment.create(orderId, PaymentMethod.CARD, "test", "confirm:test", 15_000L, 0L, "PG-TX-CRASH");
+		payment.toInProgress();
+		payment.toTimeoutUnknown();
+		return payment;
 	}
 
 	private String uniqueEmail() {

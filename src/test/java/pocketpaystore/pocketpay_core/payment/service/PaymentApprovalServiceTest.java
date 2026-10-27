@@ -38,6 +38,7 @@ import pocketpaystore.pocketpay_core.order.service.OrderService;
 import pocketpaystore.pocketpay_core.payment.domain.PaymentStatus;
 import pocketpaystore.pocketpay_core.payment.dto.request.ApprovePaymentRequest;
 import pocketpaystore.pocketpay_core.payment.dto.response.PaymentResponse;
+import pocketpaystore.pocketpay_core.payment.repository.PaymentRepository;
 import pocketpaystore.pocketpay_core.pg.client.PgClient;
 import pocketpaystore.pocketpay_core.pg.dto.response.ApprovalResponse;
 import pocketpaystore.pocketpay_core.point.domain.PointBalance;
@@ -76,6 +77,9 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 
 	@Autowired
 	private PointBalanceRepository pointBalanceRepository;
+
+	@Autowired
+	private PaymentRepository paymentRepository;
 
 	@Autowired
 	private VendorRepository vendorRepository;
@@ -259,6 +263,115 @@ class PaymentApprovalServiceTest extends RedisTestContainer {
 
 		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
 		assertThat(stock.getReservedQuantity()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("TIMEOUT_UNKNOWN 결제가 남은 주문에 새 결제 요청이 오면, 이전 결제를 재조회해 승인이 확인되면 새 승인 없이 이전 결제를 완료 처리한다")
+	void approve_retryWhileTimeoutUnknown_previousApproved_completesPreviousWithoutNewApproval() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any()))
+				.thenThrow(new RuntimeException("connection refused"))
+				.thenReturn(new ApprovalResponse("PG-KEY-UNKNOWN-1", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
+
+		PaymentResponse first = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-UNKNOWN-1", 0L, 10_000L));
+		assertThat(first.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
+
+		PaymentResponse retry = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-UNKNOWN-2", 0L, 10_000L));
+
+		assertThat(retry.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+		assertThat(retry.getId()).isEqualTo(first.getId());
+		verify(pgClient, times(1)).approve(any(), any());
+		verify(pgClient, times(2)).inquire("PG-KEY-UNKNOWN-1");
+
+		Order order = orderRepository.findById(orderId).orElseThrow();
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+		assertThat(stock.getSoldQuantity()).isEqualTo(1);
+		assertThat(stock.getReservedQuantity()).isZero();
+	}
+
+	@Test
+	@DisplayName("TIMEOUT_UNKNOWN 결제가 남은 주문에 새 결제 요청이 오면, 이전 결제가 실패로 확인된 경우에만 새 결제를 진행한다")
+	void approve_retryWhileTimeoutUnknown_previousFailed_proceedsWithNewAttempt() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		when(pgClient.approve(any(), any()))
+				.thenThrow(new RuntimeException("connection refused"))
+				.thenReturn(new ApprovalResponse("PG-KEY-NEW-ATTEMPT", "ORDER-TEST", "DONE", 10_000L, LocalDateTime.now()));
+		when(pgClient.inquire(any()))
+				.thenThrow(new RuntimeException("connection refused"))
+				.thenReturn(new ApprovalResponse("PG-KEY-OLD-ATTEMPT", "ORDER-TEST", "ABORTED", 10_000L, null));
+
+		PaymentResponse first = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-OLD-ATTEMPT", 0L, 10_000L));
+		assertThat(first.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
+
+		PaymentResponse retry = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-NEW-ATTEMPT", 0L, 10_000L));
+
+		assertThat(retry.getStatus()).isEqualTo(PaymentStatus.DONE.name());
+		assertThat(retry.getId()).isNotEqualTo(first.getId());
+		assertThat(paymentRepository.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(PaymentStatus.FAILED);
+		assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAID);
+	}
+
+	@Test
+	@DisplayName("TIMEOUT_UNKNOWN 결제가 남은 주문에 새 결제 요청이 와도 재조회로 확정되지 않으면 PG 승인을 다시 보내지 않고 TIMEOUT_UNKNOWN으로 응답한다")
+	void approve_retryWhileTimeoutUnknown_stillUnknown_blocksNewApproval() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		when(pgClient.approve(any(), any())).thenThrow(new RuntimeException("connection refused"));
+		when(pgClient.inquire(any())).thenThrow(new RuntimeException("connection refused"));
+
+		PaymentResponse first = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-STUCK-1", 0L, 10_000L));
+		PaymentResponse sameKeyRetry = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-STUCK-1", 0L, 10_000L));
+		PaymentResponse newKeyRetry = paymentApprovalService.approve(
+				buyer.getId(), order0.getOrderNumber(), new ApprovePaymentRequest("PG-KEY-STUCK-2", 0L, 10_000L));
+
+		assertThat(sameKeyRetry.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
+		assertThat(newKeyRetry.getStatus()).isEqualTo(PaymentStatus.TIMEOUT_UNKNOWN.name());
+		assertThat(sameKeyRetry.getId()).isEqualTo(first.getId());
+		assertThat(newKeyRetry.getId()).isEqualTo(first.getId());
+		verify(pgClient, times(1)).approve(any(), any());
+		assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.PAYMENT_PENDING);
+	}
+
+	@Test
+	@DisplayName("TIMEOUT_UNKNOWN 결제가 있는 주문에는 결제 시작 단계에서도 새 결제 시도를 만들 수 없다")
+	void initiate_timeoutUnknownPaymentExists_rejected() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		Long unknownPaymentId = paymentStateService.initiate(
+				orderId, UUID.randomUUID().toString(), 10_000L, 0L, "PG-KEY-UNKNOWN", "mock-pg");
+		paymentStateService.markTimeoutUnknown(unknownPaymentId);
+
+		assertThatThrownBy(() -> paymentStateService.initiate(
+				orderId, UUID.randomUUID().toString(), 10_000L, 0L, "PG-KEY-SECOND", "mock-pg"))
+				.isInstanceOf(CustomException.class)
+				.extracting(e -> ((CustomException) e).getErrorCode())
+				.isEqualTo(PaymentErrorCode.PAYMENT_ALREADY_IN_PROGRESS);
+	}
+
+	@Test
+	@DisplayName("다른 경로(Batch 등)가 먼저 확정한 결제는 완료·실패·확인 필요 처리가 다시 들어와도 상태를 바꾸지 않는다")
+	void stateTransitions_alreadyResolvedPayment_keepsResolvedState() {
+		OrderResponse order0 = createOrder(1);
+		Long orderId = orderRepository.findByOrderNumber(order0.getOrderNumber()).orElseThrow().getId();
+		Long paymentId = paymentStateService.initiate(
+				orderId, UUID.randomUUID().toString(), 10_000L, 0L, "PG-KEY-RESOLVED", "mock-pg");
+		paymentStateService.markTimeoutUnknown(paymentId);
+		paymentStateService.markDone(paymentId, orderId);
+
+		assertThat(paymentStateService.markDone(paymentId, orderId).getStatus()).isEqualTo(PaymentStatus.DONE);
+		assertThat(paymentStateService.markTimeoutUnknown(paymentId).getStatus()).isEqualTo(PaymentStatus.DONE);
+		Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+		assertThat(stock.getSoldQuantity()).isEqualTo(1);
 	}
 
 	@Test

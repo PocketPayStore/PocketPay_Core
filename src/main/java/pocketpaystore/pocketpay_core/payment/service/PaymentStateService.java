@@ -1,5 +1,7 @@
 package pocketpaystore.pocketpay_core.payment.service;
 
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,9 @@ import pocketpaystore.pocketpay_core.product.service.StockService;
 @RequiredArgsConstructor
 public class PaymentStateService {
 
+	private static final List<PaymentStatus> UNRESOLVED_STATUSES =
+			List.of(PaymentStatus.IN_PROGRESS, PaymentStatus.TIMEOUT_UNKNOWN);
+
 	private final PaymentRepository paymentRepository;
 	private final PaymentStatusHistoryRepository paymentStatusHistoryRepository;
 	private final OrderRepository orderRepository;
@@ -50,7 +55,7 @@ public class PaymentStateService {
 	public Long initiate(Long orderId, String idempotencyKey, Long amount, Long usedPointAmount,
 						  String paymentKey, String pgProviderName) {
 		Order order = findOrderForUpdate(orderId);
-		if (paymentRepository.existsByOrderIdAndStatus(orderId, PaymentStatus.IN_PROGRESS)) {
+		if (paymentRepository.existsByOrderIdAndStatusIn(orderId, UNRESOLVED_STATUSES)) {
 			throw new CustomException(PaymentErrorCode.PAYMENT_ALREADY_IN_PROGRESS);
 		}
 		if (order.isReservationExpired()) {
@@ -74,7 +79,10 @@ public class PaymentStateService {
 
 	@Transactional
 	public Payment markDone(Long paymentId, Long orderId) {
-		Payment payment = findPayment(paymentId);
+		Payment payment = findPaymentForUpdate(paymentId);
+		if (payment.getStatus() == PaymentStatus.DONE) {
+			return payment;
+		}
 		if (payment.getUsedPointAmount() > 0) {
 			pointReservationService.confirm(paymentId, orderId);
 		}
@@ -94,7 +102,10 @@ public class PaymentStateService {
 
 	@Transactional
 	public Payment markPaymentFailed(Long paymentId, String failureCode, String failureMessage) {
-		Payment payment = findPayment(paymentId);
+		Payment payment = findPaymentForUpdate(paymentId);
+		if (payment.getStatus() == PaymentStatus.FAILED) {
+			return payment;
+		}
 		if (payment.getUsedPointAmount() > 0) {
 			pointReservationService.release(paymentId);
 		}
@@ -107,7 +118,10 @@ public class PaymentStateService {
 
 	@Transactional
 	public Payment markTimeoutUnknown(Long paymentId) {
-		Payment payment = findPayment(paymentId);
+		Payment payment = findPaymentForUpdate(paymentId);
+		if (payment.getStatus() != PaymentStatus.IN_PROGRESS) {
+			return payment;
+		}
 		payment.toTimeoutUnknown();
 		paymentStatusHistoryRepository.save(PaymentStatusHistory.create(payment.getId(), payment.getStatus()));
 		Order order = findOrder(payment.getOrderId());
@@ -122,8 +136,8 @@ public class PaymentStateService {
 		order.expire();
 	}
 
-	private Payment findPayment(Long paymentId) {
-		return paymentRepository.findById(paymentId)
+	private Payment findPaymentForUpdate(Long paymentId) {
+		return paymentRepository.findByIdWithLock(paymentId)
 				.orElseThrow(() -> new CustomException(PaymentErrorCode.PAYMENT_NOT_FOUND));
 	}
 

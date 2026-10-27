@@ -93,7 +93,7 @@ public class Payment extends BaseEntity {
 	}
 
 	public void toDone() {
-		validateTransition(PaymentStatus.IN_PROGRESS);
+		validateUnresolved();
 		this.approvedAt = LocalDateTime.now();
 		this.refundableAmount = this.amount;
 		this.refundablePointAmount = this.usedPointAmount;
@@ -101,7 +101,7 @@ public class Payment extends BaseEntity {
 	}
 
 	public void toFailed(String failureCode, String failureMessage) {
-		validateTransition(PaymentStatus.IN_PROGRESS);
+		validateUnresolved();
 		this.status = PaymentStatus.FAILED;
 		this.failureCode = failureCode;
 		this.failureMessage = failureMessage;
@@ -140,6 +140,16 @@ public class Payment extends BaseEntity {
 				? PaymentStatus.CANCELED
 				: PaymentStatus.PARTIAL_CANCELED;
 		return new RefundAllocation(pgPortion, pointPortion);
+	}
+
+	public boolean isUnresolved() {
+		return this.status == PaymentStatus.IN_PROGRESS || this.status == PaymentStatus.TIMEOUT_UNKNOWN;
+	}
+
+	private void validateUnresolved() {
+		if (!isUnresolved()) {
+			throw new CustomException(PaymentErrorCode.INVALID_PAYMENT_STATE);
+		}
 	}
 
 	private void validateTransition(PaymentStatus expected) {
